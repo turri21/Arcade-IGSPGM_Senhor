@@ -178,7 +178,7 @@ reg [26:3] cached_tags[N_SLOTS];
 reg [63:0] cache_data;
 reg [26:3] cache_tag;
 reg [5:0] cache_slot_idx;
-
+reg [5:0] req_slot_idx;
 wire [5:0] slot_idx = { channel, addr[3] };
 
 always_comb begin
@@ -196,12 +196,12 @@ state_t state = IDLE;
 assign data_valid = (cache_tag == addr[26:3]) && (slot_idx == cache_slot_idx);
 
 always_ff @(posedge clk) begin
+    cache_data <= cached_data[slot_idx];
+    cache_tag <= cached_tags[slot_idx];
+    cache_slot_idx <= slot_idx;
+
     case(state)
         IDLE: begin
-            cache_data <= cached_data[slot_idx];
-            cache_tag <= cached_tags[slot_idx];
-            cache_slot_idx <= slot_idx;
-
             if (read & ~data_valid) begin
                 state <= CACHE_CHECK;
             end
@@ -212,15 +212,14 @@ always_ff @(posedge clk) begin
             end else begin
                 sdr_addr <= { addr[26:3], 3'b000 };
                 sdr_req <= ~sdr_req;
+                req_slot_idx <= slot_idx;
                 state <= SDR_WAIT;
             end
         end
         SDR_WAIT: begin
             if (sdr_req == sdr_ack) begin
-                cached_tags[slot_idx] <= addr[26:3];
-                cached_data[slot_idx] <= sdr_data;
-                cache_data <= sdr_data;
-                cache_tag <= sdr_addr[26:3];
+                cached_tags[req_slot_idx] <= sdr_addr[26:3];
+                cached_data[req_slot_idx] <= sdr_data;
                 state <= IDLE;
             end
         end
