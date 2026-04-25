@@ -67,8 +67,39 @@ wire [10:0] scrolled_x = x + scroll[10:0];
 
 reg [15:0] tile_code;
 reg [7:0] tile_attrib;
+wire flip_y = tile_attrib[7];
+wire flip_x = tile_attrib[6];
 
-reg flip_x;
+function automatic [4:0] stream5(input [5:0] base);
+begin
+    stream5 = flip_x ? stage_data[31 - base -: 5] : stage_data[base +: 5];
+end
+endfunction
+
+function automatic [3:0] stream4(input [5:0] base);
+begin
+    stream4 = flip_x ? stage_data[31 - base -: 4] : stage_data[base +: 4];
+end
+endfunction
+
+function automatic [2:0] stream3(input [5:0] base);
+begin
+    stream3 = flip_x ? stage_data[31 - base -: 3] : stage_data[base +: 3];
+end
+endfunction
+
+function automatic [1:0] stream2(input [5:0] base);
+begin
+    stream2 = flip_x ? stage_data[31 - base -: 2] : stage_data[base +: 2];
+end
+endfunction
+
+function automatic stream1(input [5:0] base);
+begin
+    stream1 = flip_x ? stage_data[31 - base] : stage_data[base];
+end
+endfunction
+
 reg [4:0] palette;
 
 assign vram_addr = ( state < APPLY_SCROLL ) ? scroll_addr : { vram_row_addr, tile_addr };
@@ -85,50 +116,85 @@ always_ff @(posedge clk) begin
     if (load_buffer) begin
         case(load_slot)
             0: begin
-                buffer[0] <= stage_data[4:0]; pal_buffer[0] <= palette;
-                buffer[1] <= stage_data[9:5]; pal_buffer[1] <= palette;
-                buffer[2] <= stage_data[14:10]; pal_buffer[2] <= palette;
-                buffer[3] <= stage_data[19:15]; pal_buffer[3] <= palette;
-                buffer[4] <= stage_data[24:20]; pal_buffer[4] <= palette;
-                buffer[5] <= stage_data[29:25]; pal_buffer[5] <= palette;
-                buffer[6][1:0] <= stage_data[31:30];
+                buffer[0] <= stream5(0); pal_buffer[0] <= palette;
+                buffer[1] <= stream5(5); pal_buffer[1] <= palette;
+                buffer[2] <= stream5(10); pal_buffer[2] <= palette;
+                buffer[3] <= stream5(15); pal_buffer[3] <= palette;
+                buffer[4] <= stream5(20); pal_buffer[4] <= palette;
+                buffer[5] <= stream5(25); pal_buffer[5] <= palette;
+                if (flip_x)
+                    buffer[6][4:3] <= stream2(30);
+                else
+                    buffer[6][1:0] <= stream2(30);
             end
             1: begin
-                buffer[6][4:2] <= stage_data[2:0]; pal_buffer[6] <= palette;
-                buffer[7] <= stage_data[7:3]; pal_buffer[7] <= palette;
-                buffer[8] <= stage_data[12:8]; pal_buffer[8] <= palette;
-                buffer[9] <= stage_data[17:13]; pal_buffer[9] <= palette;
-                buffer[10] <= stage_data[22:18]; pal_buffer[10] <= palette;
-                buffer[11] <= stage_data[27:23]; pal_buffer[11] <= palette;
-                buffer[12][3:0] <= stage_data[31:28];
+                if (flip_x)
+                    buffer[6][2:0] <= stream3(0);
+                else
+                    buffer[6][4:2] <= stream3(0);
+                pal_buffer[6] <= palette;
+
+                buffer[7] <= stream5(3); pal_buffer[7] <= palette;
+                buffer[8] <= stream5(8); pal_buffer[8] <= palette;
+                buffer[9] <= stream5(13); pal_buffer[9] <= palette;
+                buffer[10] <= stream5(18); pal_buffer[10] <= palette;
+                buffer[11] <= stream5(23); pal_buffer[11] <= palette;
+
+                if (flip_x)
+                    buffer[12][4:1] <= stream4(28);
+                else
+                    buffer[12][3:0] <= stream4(28);
             end
             2: begin
-                buffer[12][4] <= stage_data[0]; pal_buffer[12] <= palette;
-                buffer[13] <= stage_data[5:1]; pal_buffer[13] <= palette;
-                buffer[14] <= stage_data[10:6]; pal_buffer[14] <= palette;
-                buffer[15] <= stage_data[15:11]; pal_buffer[15] <= palette;
-                buffer[16] <= stage_data[20:16]; pal_buffer[16] <= palette;
-                buffer[17] <= stage_data[25:21]; pal_buffer[17] <= palette;
-                buffer[18] <= stage_data[30:26]; pal_buffer[18] <= palette;
-                buffer[19][0] <= stage_data[31];
+                if (flip_x)
+                    buffer[12][0] <= stream1(0);
+                else
+                    buffer[12][4] <= stream1(0);
+                pal_buffer[12] <= palette;
+
+                buffer[13] <= stream5(1); pal_buffer[13] <= palette;
+                buffer[14] <= stream5(6); pal_buffer[14] <= palette;
+                buffer[15] <= stream5(11); pal_buffer[15] <= palette;
+                buffer[16] <= stream5(16); pal_buffer[16] <= palette;
+                buffer[17] <= stream5(21); pal_buffer[17] <= palette;
+                buffer[18] <= stream5(26); pal_buffer[18] <= palette;
+
+                if (flip_x)
+                    buffer[19][4] <= stream1(31);
+                else
+                    buffer[19][0] <= stream1(31);
             end
             3: begin
-                buffer[19][4:1] <= stage_data[3:0]; pal_buffer[19] <= palette;
-                buffer[20] <= stage_data[8:4]; pal_buffer[20] <= palette;
-                buffer[21] <= stage_data[13:9]; pal_buffer[21] <= palette;
-                buffer[22] <= stage_data[18:14]; pal_buffer[22] <= palette;
-                buffer[23] <= stage_data[23:19]; pal_buffer[23] <= palette;
-                buffer[24] <= stage_data[28:24]; pal_buffer[24] <= palette;
-                buffer[25][2:0] <= stage_data[31:29];
+                if (flip_x)
+                    buffer[19][3:0] <= stream4(0);
+                else
+                    buffer[19][4:1] <= stream4(0);
+                pal_buffer[19] <= palette;
+
+                buffer[20] <= stream5(4); pal_buffer[20] <= palette;
+                buffer[21] <= stream5(9); pal_buffer[21] <= palette;
+                buffer[22] <= stream5(14); pal_buffer[22] <= palette;
+                buffer[23] <= stream5(19); pal_buffer[23] <= palette;
+                buffer[24] <= stream5(24); pal_buffer[24] <= palette;
+
+                if (flip_x)
+                    buffer[25][4:2] <= stream3(29);
+                else
+                    buffer[25][2:0] <= stream3(29);
             end
             4: begin
-                buffer[25][4:3] <= stage_data[1:0]; pal_buffer[25] <= palette;
-                buffer[26] <= stage_data[6:2]; pal_buffer[26] <= palette;
-                buffer[27] <= stage_data[11:7]; pal_buffer[27] <= palette;
-                buffer[28] <= stage_data[16:12]; pal_buffer[28] <= palette;
-                buffer[29] <= stage_data[21:17]; pal_buffer[29] <= palette;
-                buffer[30] <= stage_data[26:22]; pal_buffer[30] <= palette;
-                buffer[31] <= stage_data[31:27]; pal_buffer[31] <= palette;
+                if (flip_x)
+                    buffer[25][1:0] <= stream2(0);
+                else
+                    buffer[25][4:3] <= stream2(0);
+                pal_buffer[25] <= palette;
+
+                buffer[26] <= stream5(2); pal_buffer[26] <= palette;
+                buffer[27] <= stream5(7); pal_buffer[27] <= palette;
+                buffer[28] <= stream5(12); pal_buffer[28] <= palette;
+                buffer[29] <= stream5(17); pal_buffer[29] <= palette;
+                buffer[30] <= stream5(22); pal_buffer[30] <= palette;
+                buffer[31] <= stream5(27); pal_buffer[31] <= palette;
             end
             default: begin end
         endcase
@@ -196,7 +262,9 @@ always_ff @(posedge clk) begin
             end
 
             ROM_REQ0: begin
-                rom_address <= { tile_code[14:0], y[4:0], 4'd0 } + { 2'b0, tile_code[14:0], y[4:0], 2'd0 };
+                rom_address <= { tile_code[14:0], flip_y ? ~y[4:0] : y[4:0], 4'd0 }
+                             + { 2'b0, tile_code[14:0], flip_y ? ~y[4:0] : y[4:0], 2'd0 }
+                             + (flip_x ? 16 : 0);
                 rom_req <= ~rom_req;
                 palette <= tile_attrib[5:1];
                 state <= ROM_WAIT0;
@@ -206,7 +274,7 @@ always_ff @(posedge clk) begin
                 if (rom_req == rom_ack && buffer_ready) begin
                     stage_data <= rom_data;
                     load_buffer <= 1;
-                    rom_address <= rom_address + 4;
+                    rom_address <= flip_x ? rom_address - 4 : rom_address + 4;
                     rom_req <= ~rom_req;
                     state <= ROM_WAIT1;
                 end
@@ -216,7 +284,7 @@ always_ff @(posedge clk) begin
                 if (rom_req == rom_ack && buffer_ready) begin
                     stage_data <= rom_data;
                     load_buffer <= 1;
-                    rom_address <= rom_address + 4;
+                    rom_address <= flip_x ? rom_address - 4 : rom_address + 4;
                     rom_req <= ~rom_req;
                     state <= ROM_WAIT2;
                 end
@@ -226,7 +294,7 @@ always_ff @(posedge clk) begin
                 if (rom_req == rom_ack && buffer_ready) begin
                     stage_data <= rom_data;
                     load_buffer <= 1;
-                    rom_address <= rom_address + 4;
+                    rom_address <= flip_x ? rom_address - 4 : rom_address + 4;
                     rom_req <= ~rom_req;
                     state <= ROM_WAIT3;
                 end
@@ -236,7 +304,7 @@ always_ff @(posedge clk) begin
                 if (rom_req == rom_ack && buffer_ready) begin
                     stage_data <= rom_data;
                     load_buffer <= 1;
-                    rom_address <= rom_address + 4;
+                    rom_address <= flip_x ? rom_address - 4 : rom_address + 4;
                     rom_req <= ~rom_req;
                     state <= ROM_WAIT4;
                 end

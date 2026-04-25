@@ -79,9 +79,20 @@ typedef struct
 
 typedef struct
 {
-    u16 sprites[32 * 32];
-    u16 bg[32 * 32];
-    u16 fg[16 * 32];
+    u16 colors[32];
+} IGS023PAL32;
+
+typedef struct
+{
+    u16 colors[16];
+} IGS023PAL16;
+
+
+typedef struct
+{
+    IGS023PAL32 sprites[32];
+    IGS023PAL32 bg[32];
+    IGS023PAL16 fg[32];
     u16 unused[48 * 32];
 } IGS023PALRAM;
 

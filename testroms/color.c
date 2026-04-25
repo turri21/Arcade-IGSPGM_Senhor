@@ -5,9 +5,7 @@
 
 void set_fg_palette(uint16_t pal_index, uint16_t *colors)
 {
-    uint16_t offset = pal_index * 16;
-
-    memcpy(PALRAM->fg + offset, colors, 32);
+    memcpy(PALRAM->fg[pal_index].colors, colors, 32);
 }
 
 static void gradient(uint8_t r0, uint8_t g0, uint8_t b0, uint8_t r1, uint8_t g1, uint8_t b1,
@@ -56,11 +54,11 @@ void set_default_palette()
 {
     memset(PALRAM, 0, sizeof(*PALRAM));
 
-    gradient(0, 255, 0, 255, 0, 255, PALRAM->sprites, 32);
-    gradient(0, 255, 0, 255, 0, 255, PALRAM->bg, 32);
+    gradient(0, 255, 0, 255, 0, 255, PALRAM->sprites[0].colors, 32);
+    gradient(0, 255, 0, 255, 0, 255, PALRAM->bg[0].colors, 32);
 
-    memcpy(&PALRAM->sprites[32], simple_spr, 32 * 2);
-    memcpy(&PALRAM->bg[32], logo_pal, 32 * 2);
+    memcpy(&PALRAM->sprites[1], simple_spr, 32 * 2);
+    memcpy(&PALRAM->bg[1], logo_pal, 32 * 2);
     
     set_text_palette(0, 255, 255, 255, 255, 255, 255);
     set_text_palette(1, 128, 128, 192, 192, 192, 255);

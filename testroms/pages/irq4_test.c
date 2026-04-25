@@ -15,13 +15,13 @@ static void irq4_handler()
     igs023_ack_irq4();
     if (toggle)
     {
-        PALRAM->fg[8 * 16] = 0xffff;
+        PALRAM->fg[8].colors[0] = 0xffff;
         toggle = false;
         if (sync) igs023_enable_irq4(false);
     }
     else
     {
-        PALRAM->fg[8 * 16] = 0x0000;
+        PALRAM->fg[8].colors[0] = 0x0000;
         toggle = true;
     }
 }
@@ -56,7 +56,7 @@ static void update()
     if (sync)
     {
         igs023_enable_irq4(false);
-        PALRAM->fg[8 * 16] = 0x0000;
+        PALRAM->fg[8].colors[0] = 0x0000;
         toggle = false;
         while(IGS023_SCANLINE_RAW() != 100) {}
         igs023_enable_irq4(true);

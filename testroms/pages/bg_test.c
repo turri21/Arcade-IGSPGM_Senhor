@@ -19,7 +19,8 @@ static void wobble(s16 offset)
 {
     for (s16 y = 0; y < 64; y++)
     {
-        VRAM->bg_scroll[y + 96 + 8] = sin_approx((y << 2) + offset) >> 2;
+        //VRAM->bg_scroll[y + 96 + 8] = 64 + (sin_approx((y << 2) + offset) >> 2);
+        VRAM->bg_scroll[y + 96 + 8] = y + 32;
     }
 }
 
@@ -41,7 +42,10 @@ static void init()
 
     memset(VRAM->bg, 0, sizeof(VRAM->bg));
     memset(VRAM->bg_scroll, 0, sizeof(VRAM->bg_scroll));
-    
+ 
+    memset(&PALRAM->bg[2], 0, sizeof( IGS023PAL32 ));
+    PALRAM->bg[2].colors[0xa] = RGB_ENCODE(128, 192, 128);
+
     //memset(PALRAM->unused, 0xffff, sizeof(PALRAM->unused));
 
     IGS023_BG_X_SET(8);
@@ -95,10 +99,14 @@ static void init()
     text_cursor(35, 11);
     text("\e \e \e \e \e \e \e \e");
 
+    for( int x = 0; x < 32; x++ )
+    {
+        sym_at(0x7cd, x, 6, 2);
+    }
+
     tile = &VRAM->bg[1 + ( 3 * 64)];
 }
 
-uint16_t attrib_test;
 static void update()
 {
     igs023_wait_vblank();
@@ -112,7 +120,10 @@ static void update()
     gui_u16_func("Y", IGS023_BG_Y_GET, IGS023_BG_Y_SET);
     if (gui_u8("SX", &sx, 0, 0x1f)) IGS023_BG_CTRL_SET(( IGS023_BG_CTRL_GET() & 0xffe0 ) | ( sx & 0x1f ));
     if (gui_u8("SY", &sy, 0, 0x1f)) IGS023_BG_CTRL_SET(( IGS023_BG_CTRL_GET() & 0xfc1f ) | (( sy & 0x1f ) << 5));
-    gui_bits16("ATTRIB", &attrib_test);
+    if (gui_bits16("ATTRIB", &attrib))
+    {
+        tile->attrib = attrib;
+    }
     gui_toggle("ANIMATE", &animate);
     gui_end();
 
