@@ -331,6 +331,13 @@ generate
     end
 endgenerate
 
+function automatic [LINE_BUF_BITS-1:0] lb(input [7:0] line);
+begin
+    lb = line[LINE_BUF_BITS-1:0];
+end
+endfunction
+
+
 always_comb begin
     for (int i = 0; i < NUM_LINE_BUFFERS; i++) begin
         buf_wr0[i] = 0;
@@ -341,20 +348,20 @@ always_comb begin
         buf_data1[i] = 0;
     end
 
-    buf_wr0[erase_line] = 1;
-    buf_data0[erase_line] = 0;
-    buf_addr0[erase_line] = scan_column;
+    buf_wr0[lb(erase_line)] = 1;
+    buf_data0[lb(erase_line)] = 0;
+    buf_addr0[lb(erase_line)] = scan_column;
 
-    buf_addr0[scan_line] = scan_column;
-    scan_color = buf_q[scan_line];
+    buf_addr0[lb(scan_line)] = scan_column;
+    scan_color = buf_q[lb(scan_line)];
 
     if (|line_wr) begin
-        buf_addr0[line_wr_entry.line] = line_wr_entry.column;
-        buf_data0[line_wr_entry.line] = { 1'b1, line_wr_entry.prio, line_wr_entry.palette, line_wr_color0 };
-        buf_addr1[line_wr_entry.line] = line_wr_entry.column + 1;
-        buf_data1[line_wr_entry.line] = { 1'b1, line_wr_entry.prio, line_wr_entry.palette, line_wr_color1 };
-        buf_wr0[line_wr_entry.line] = line_wr[0];
-        buf_wr1[line_wr_entry.line] = line_wr[1];
+        buf_addr0[lb(line_wr_entry.line)] = line_wr_entry.column;
+        buf_data0[lb(line_wr_entry.line)] = { 1'b1, line_wr_entry.prio, line_wr_entry.palette, line_wr_color0 };
+        buf_addr1[lb(line_wr_entry.line)] = line_wr_entry.column + 1;
+        buf_data1[lb(line_wr_entry.line)] = { 1'b1, line_wr_entry.prio, line_wr_entry.palette, line_wr_color1 };
+        buf_wr0[lb(line_wr_entry.line)] = line_wr[0];
+        buf_wr1[lb(line_wr_entry.line)] = line_wr[1];
     end
 end
 
