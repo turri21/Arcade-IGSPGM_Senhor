@@ -1026,21 +1026,48 @@ std::string SimProtocol::HandleLine(const std::string &line)
 
         return SerializeJson(WrapControllerResult(id, result, JsonValue::Object({{"applied", JsonValue::Bool(result.value.mApplied)}})));
     }
-    if (method == "input.set_dipswitch_a")
+    if (method == "input.set_dipswitch")
     {
-        uint64_t value = 0;
-        if (!RequireObjectField(params, "value", field, error) || !RequireNumber(*field, "value", value, error))
-            return SerializeJson(MakeErrorResponse(id, "bad_request", error));
-        auto result = mController.SetDipSwitchA(static_cast<uint8_t>(value));
-        return SerializeJson(WrapControllerResult(id, result, JsonValue::Object({})));
-    }
-    if (method == "input.set_dipswitch_b")
-    {
-        uint64_t value = 0;
-        if (!RequireObjectField(params, "value", field, error) || !RequireNumber(*field, "value", value, error))
-            return SerializeJson(MakeErrorResponse(id, "bad_request", error));
-        auto result = mController.SetDipSwitchB(static_cast<uint8_t>(value));
-        return SerializeJson(WrapControllerResult(id, result, JsonValue::Object({})));
+        uint64_t switchIndex = 0;
+        if (const JsonValue *switchField = FindObjectField(params, "switch"))
+        {
+            uint64_t switchNumber = 0;
+            if (!RequireNumber(*switchField, "switch", switchNumber, error))
+                return SerializeJson(MakeErrorResponse(id, "bad_request", error));
+            if (switchNumber < 1 || switchNumber > 8)
+                return SerializeJson(MakeErrorResponse(id, "bad_request", "DIP switch must be 1..8"));
+            switchIndex = switchNumber - 1;
+        }
+        else if (const JsonValue *indexField = FindObjectField(params, "index"))
+        {
+            if (!RequireNumber(*indexField, "index", switchIndex, error))
+                return SerializeJson(MakeErrorResponse(id, "bad_request", error));
+            if (switchIndex > 7)
+                return SerializeJson(MakeErrorResponse(id, "bad_request", "DIP switch index must be 0..7"));
+        }
+        else
+        {
+            return SerializeJson(MakeErrorResponse(id, "bad_request", "input.set_dipswitch requires switch or index"));
+        }
+
+        bool enabled = false;
+        if (const JsonValue *onField = FindObjectField(params, "on"))
+        {
+            if (!RequireBool(*onField, "on", enabled, error))
+                return SerializeJson(MakeErrorResponse(id, "bad_request", error));
+        }
+        else if (const JsonValue *enabledField = FindObjectField(params, "enabled"))
+        {
+            if (!RequireBool(*enabledField, "enabled", enabled, error))
+                return SerializeJson(MakeErrorResponse(id, "bad_request", error));
+        }
+        else
+        {
+            return SerializeJson(MakeErrorResponse(id, "bad_request", "input.set_dipswitch requires on or enabled"));
+        }
+
+        auto result = mController.SetDipSwitch(static_cast<uint8_t>(switchIndex), enabled);
+        return SerializeJson(WrapControllerResult(id, result, JsonValue::Object({{"value", JsonValue::Number(mController.GetDipSwitches())}})));
     }
     if (method == "input.get_state")
     {

@@ -72,8 +72,7 @@ Primary reference:
 - `gui.get_state`
 - `gui.set_override`
 - `gui.press_button`
-- `input.set_dipswitch_a`
-- `input.set_dipswitch_b`
+- `input.set_dipswitch`
 
 Read the full method reference in [`docs/sim-server.md`](../../../docs/sim-server.md) before using less common operations or composing complex conditions.
 

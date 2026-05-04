@@ -394,8 +394,8 @@ class DipswitchWindow : public Window
     void Init() {};
     void Draw()
     {
-        uint32_t dipSwitchA = gSimController.GetDipSwitchA();
-        uint32_t dipSwitchB = gSimController.GetDipSwitchB();
+        uint32_t dipSwitches = gSimController.GetDipSwitches();
+        bool changed = false;
 
         if (ImGui::BeginTable("dipswitches", 9))
         {
@@ -403,35 +403,26 @@ class DipswitchWindow : public Window
             for (int i = 0; i < 8; i++)
             {
                 char n[2];
-                n[0] = '0' + i;
+                n[0] = '1' + i;
                 n[1] = 0;
                 ImGui::TableSetupColumn(n, ImGuiTableColumnFlags_WidthFixed);
             }
             ImGui::TableHeadersRow();
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
-            ImGui::Text("DWSA");
+            ImGui::Text("DIP");
             for (int i = 0; i < 8; i++)
             {
                 ImGui::TableNextColumn();
                 ImGui::PushID(i);
-                ImGui::CheckboxFlags("##dwsa", &dipSwitchA, ((uint32_t)1 << i));
-                ImGui::PopID();
-            }
-            ImGui::TableNextColumn();
-            ImGui::Text("DWSB");
-            for (int i = 0; i < 8; i++)
-            {
-                ImGui::TableNextColumn();
-                ImGui::PushID(i);
-                ImGui::CheckboxFlags("##dwsb", &dipSwitchB, ((uint32_t)1 << i));
+                changed |= ImGui::CheckboxFlags("##dip", &dipSwitches, ((uint32_t)1 << i));
                 ImGui::PopID();
             }
             ImGui::EndTable();
         }
 
-        gSimController.SetDipSwitchA(static_cast<uint8_t>(dipSwitchA));
-        gSimController.SetDipSwitchB(static_cast<uint8_t>(dipSwitchB));
+        if (changed)
+            gSimController.SetDipSwitches(static_cast<uint8_t>(dipSwitches));
     }
 };
 

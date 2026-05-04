@@ -4,6 +4,58 @@
 #include <getopt.h>
 #include <cstring>
 #include <cstdio>
+#include <cctype>
+
+static std::string Lowercase(std::string value)
+{
+    for (char &ch : value)
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    return value;
+}
+
+static bool ParseDipSwitchState(const std::string &text, bool &enabled)
+{
+    std::string value = Lowercase(text);
+    if (value == "on" || value == "1" || value == "true" || value == "enable" || value == "enabled")
+    {
+        enabled = true;
+        return true;
+    }
+    if (value == "off" || value == "0" || value == "false" || value == "disable" || value == "disabled")
+    {
+        enabled = false;
+        return true;
+    }
+    return false;
+}
+
+static bool MakeDipSwitchCommand(const std::string &switchText, const std::string &stateText, uint64_t &encoded)
+{
+    uint64_t switchNumber = 0;
+    try
+    {
+        switchNumber = std::stoull(switchText);
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    bool enabled = false;
+    if (switchNumber < 1 || switchNumber > 8 || !ParseDipSwitchState(stateText, enabled))
+        return false;
+
+    encoded = (switchNumber - 1) | (enabled ? 0x100 : 0);
+    return true;
+}
+
+static bool ParseDipSwitchArgument(const std::string &arg, uint64_t &encoded)
+{
+    size_t sep = arg.find_first_of("=:/,");
+    if (sep == std::string::npos)
+        return false;
+    return MakeDipSwitchCommand(arg.substr(0, sep), arg.substr(sep + 1), encoded);
+}
 
 void CommandQueue::Add(const Command &cmd)
 {
@@ -25,8 +77,7 @@ bool CommandQueue::ParseArguments(int argc, char **argv, std::string &gameName)
                                            {"load-game", required_argument, 0, 'g'},
                                            {"load-mra", required_argument, 0, 'm'},
                                            {"reset", required_argument, 0, 'r'},
-                                           {"dipswitch-a", required_argument, 0, 'A'},
-                                           {"dipswitch-b", required_argument, 0, 'B'},
+                                           {"dipswitch", required_argument, 0, 'D'},
                                            {"headless", no_argument, 0, 'h'},
                                            {"verbose", no_argument, 0, 'v'},
                                            {"help", no_argument, 0, '?'},
@@ -38,7 +89,7 @@ bool CommandQueue::ParseArguments(int argc, char **argv, std::string &gameName)
     // Reset getopt
     optind = 1;
 
-    while ((c = getopt_long(argc, argv, "l:s:c:f:p:t:Tx:g:m:r:A:B:hv?", sLongOptions, &optionIndex)) != -1)
+    while ((c = getopt_long(argc, argv, "l:s:c:f:p:t:Tx:g:m:r:D:hv?", sLongOptions, &optionIndex)) != -1)
     {
         switch (c)
         {
@@ -119,21 +170,17 @@ bool CommandQueue::ParseArguments(int argc, char **argv, std::string &gameName)
         }
         break;
 
-        case 'A':
+        case 'D':
         {
-            uint64_t value = std::stoull(optarg, nullptr, 16);
-            Add(Command(CommandType::SET_DIPSWITCH_A, value));
+            uint64_t value = 0;
+            if (!ParseDipSwitchArgument(optarg, value))
+            {
+                printf("Error: --dipswitch expects <1-8>=<on|off>\n");
+                return false;
+            }
+            Add(Command(CommandType::SET_DIPSWITCH, value));
             if (mVerbose)
-                printf("Command: Set dipswitch A to 0x%llx\n", value);
-        }
-        break;
-
-        case 'B':
-        {
-            uint64_t value = std::stoull(optarg, nullptr, 16);
-            Add(Command(CommandType::SET_DIPSWITCH_B, value));
-            if (mVerbose)
-                printf("Command: Set dipswitch B to 0x%llx\n", value);
+                printf("Command: Turn dipswitch %llu %s\n", (value & 7) + 1, (value & 0x100) ? "on" : "off");
         }
         break;
 
@@ -315,27 +362,19 @@ bool CommandQueue::ParseScriptLine(const std::string &line)
         if (mVerbose)
             printf("Script: Reset for %llu cycles\n", cycles);
     }
-    else if (command == "dipswitch-a" || command == "dipswitch_a")
+    else if (command == "dipswitch" || command == "dip-switch" || command == "dip_switch")
     {
-        std::string hexValue;
-        iss >> hexValue;
-        if (hexValue.empty())
+        std::string switchText;
+        std::string stateText;
+        iss >> switchText >> stateText;
+        if (switchText.empty() || stateText.empty())
             return false;
-        uint64_t value = std::stoull(hexValue, nullptr, 16);
-        Add(Command(CommandType::SET_DIPSWITCH_A, value));
-        if (mVerbose)
-            printf("Script: Set dipswitch A to 0x%llx\n", value);
-    }
-    else if (command == "dipswitch-b" || command == "dipswitch_b")
-    {
-        std::string hexValue;
-        iss >> hexValue;
-        if (hexValue.empty())
+        uint64_t value = 0;
+        if (!MakeDipSwitchCommand(switchText, stateText, value))
             return false;
-        uint64_t value = std::stoull(hexValue, nullptr, 16);
-        Add(Command(CommandType::SET_DIPSWITCH_B, value));
+        Add(Command(CommandType::SET_DIPSWITCH, value));
         if (mVerbose)
-            printf("Script: Set dipswitch B to 0x%llx\n", value);
+            printf("Script: Turn dipswitch %llu %s\n", (value & 7) + 1, (value & 0x100) ? "on" : "off");
     }
     else if (command == "wait" || command == "delay")
     {
@@ -373,16 +412,15 @@ void CommandQueue::PrintUsage(const char *programName)
     printf("  --load-game <name>     Load game by name (e.g. finalb, cameltry)\n");
     printf("  --load-mra <file>      Load game from MRA file\n");
     printf("  --reset <cycles>       Reset for specified number of cycles\n");
-    printf("  --dipswitch-a <hex>    Set dipswitch A value (hex, e.g. ff)\n");
-    printf("  --dipswitch-b <hex>    Set dipswitch B value (hex, e.g. 00)\n");
+    printf("  --dipswitch <1-8>=<on|off>\n");
     printf("  --headless             Run without GUI (batch mode only)\n");
     printf("  --verbose              Print command execution details\n");
     printf("  --help                 Show this help message\n");
     printf("\nScript file format:\n");
     printf("  # Comments start with #\n");
     printf("  load-game finalb\n");
-    printf("  dipswitch-a ff\n");
-    printf("  dipswitch-b 00\n");
+    printf("  dipswitch 1 on\n");
+    printf("  dipswitch 1 off\n");
     printf("  reset 100\n");
     printf("  load-state checkpoint.state\n");
     printf("  run-frames 100\n");

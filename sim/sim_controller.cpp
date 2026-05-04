@@ -138,8 +138,7 @@ ControllerResult<EmptyResult> SimController::Initialize(bool headless)
     }
 
     Verilated::traceEverOn(true);
-    gSimCore.mTop->dswa = mDipSwitchA;
-    gSimCore.mTop->dswb = mDipSwitchB;
+    gSimCore.mTop->dipswitch = mDipSwitch;
 
     mInitialized = true;
     return ControllerResult<EmptyResult>::Success({});
@@ -191,8 +190,7 @@ ControllerResult<EmptyResult> SimController::LoadGame(const std::string &name)
     }
 
     mStateManager->SetGameName(GameLoadedShortName());
-    gSimCore.mTop->dswa = mDipSwitchA;
-    gSimCore.mTop->dswb = mDipSwitchB;
+    gSimCore.mTop->dipswitch = mDipSwitch;
     return ControllerResult<EmptyResult>::Success({});
 }
 
@@ -208,8 +206,7 @@ ControllerResult<EmptyResult> SimController::LoadMra(const std::string &path)
     }
 
     mStateManager->SetGameName(gSimCore.GetGameName());
-    gSimCore.mTop->dswa = mDipSwitchA;
-    gSimCore.mTop->dswb = mDipSwitchB;
+    gSimCore.mTop->dipswitch = mDipSwitch;
     return ControllerResult<EmptyResult>::Success({});
 }
 
@@ -459,25 +456,35 @@ ControllerResult<SignalListResult> SimController::ListSignals() const
     return ControllerResult<SignalListResult>::Success(result);
 }
 
-ControllerResult<EmptyResult> SimController::SetDipSwitchA(uint8_t value)
+ControllerResult<EmptyResult> SimController::SetDipSwitch(uint8_t switchIndex, bool enabled)
 {
     auto initResult = EnsureInitialized();
     if (!initResult.ok)
         return initResult;
 
-    mDipSwitchA = value;
-    gSimCore.mTop->dswa = mDipSwitchA;
+    if (switchIndex >= 8)
+    {
+        return ControllerResult<EmptyResult>::Failure("invalid_dipswitch", "DIP switch index must be 0..7");
+    }
+
+    uint8_t mask = static_cast<uint8_t>(1u << switchIndex);
+    if (enabled)
+        mDipSwitch |= mask;
+    else
+        mDipSwitch &= static_cast<uint8_t>(~mask);
+
+    gSimCore.mTop->dipswitch = mDipSwitch;
     return ControllerResult<EmptyResult>::Success({});
 }
 
-ControllerResult<EmptyResult> SimController::SetDipSwitchB(uint8_t value)
+ControllerResult<EmptyResult> SimController::SetDipSwitches(uint8_t value)
 {
     auto initResult = EnsureInitialized();
     if (!initResult.ok)
         return initResult;
 
-    mDipSwitchB = value;
-    gSimCore.mTop->dswb = mDipSwitchB;
+    mDipSwitch = value;
+    gSimCore.mTop->dipswitch = mDipSwitch;
     return ControllerResult<EmptyResult>::Success({});
 }
 
@@ -581,14 +588,9 @@ ControllerResult<RunResult> SimController::PressInput(const std::string &name)
     return ControllerResult<RunResult>::Success(totalResult);
 }
 
-uint8_t SimController::GetDipSwitchA() const
+uint8_t SimController::GetDipSwitches() const
 {
-    return mDipSwitchA;
-}
-
-uint8_t SimController::GetDipSwitchB() const
-{
-    return mDipSwitchB;
+    return mDipSwitch;
 }
 
 ControllerResult<StateListResult> SimController::ListStates() const

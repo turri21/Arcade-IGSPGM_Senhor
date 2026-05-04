@@ -195,10 +195,9 @@ class SimController
     ControllerResult<SignalReadResult> ReadSignal(const std::string &signal) const;
     ControllerResult<SignalListResult> ListSignals() const;
 
-    ControllerResult<EmptyResult> SetDipSwitchA(uint8_t value);
-    ControllerResult<EmptyResult> SetDipSwitchB(uint8_t value);
-    uint8_t GetDipSwitchA() const;
-    uint8_t GetDipSwitchB() const;
+    ControllerResult<EmptyResult> SetDipSwitch(uint8_t switchIndex, bool enabled);
+    ControllerResult<EmptyResult> SetDipSwitches(uint8_t value);
+    uint8_t GetDipSwitches() const;
     ControllerResult<InputStateResult> GetInputState() const;
     ControllerResult<EmptyResult> SetInput(const std::string &name, bool pressed);
     ControllerResult<EmptyResult> ClearInput(const std::string &name);
@@ -221,8 +220,7 @@ class SimController
     bool mInitialized = false;
     bool mHeadless = false;
     SimState *mStateManager = nullptr;
-    uint8_t mDipSwitchA = 0;
-    uint8_t mDipSwitchB = 0;
+    uint8_t mDipSwitch = 0;
     mutable std::unordered_map<std::string, vpiHandle> mVpiHandleCache;
 
     bool EvaluateCondition(const Condition &condition) const;

@@ -809,26 +809,28 @@ Notes:
 
 ## Input control
 
-### `input.set_dipswitch_a`
+### `input.set_dipswitch`
+
+Turn one DIP switch on or off. The `switch` field is 1-based (`1` through `8`).
 
 Request:
 
 ```json
-{"id":21,"method":"input.set_dipswitch_a","params":{"value":1}}
+{"id":21,"method":"input.set_dipswitch","params":{"switch":1,"on":true}}
 ```
 
-### `input.set_dipswitch_b`
-
-Request:
+Turn the same switch back off:
 
 ```json
-{"id":22,"method":"input.set_dipswitch_b","params":{"value":0}}
+{"id":22,"method":"input.set_dipswitch","params":{"switch":1,"on":false}}
 ```
 
-Both return:
+The method also accepts zero-based `index` (`0` through `7`) and `enabled` as an alias for `on`.
+
+Returns the current 8-bit DIP switch value:
 
 ```json
-{}
+{"value":1}
 ```
 
 ## Error handling notes

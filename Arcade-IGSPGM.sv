@@ -691,8 +691,7 @@ PGM pgm_inst(
     .green(core_g),
     .blue(core_b),
 
-    .dswa(~dip_sw[0]),
-    .dswb(~dip_sw[1]),
+    .dipswitch(~dip_sw[0]),
 
     .joystick_p1(input_p1[9:0]),
     .joystick_p2(input_p2[9:0]),

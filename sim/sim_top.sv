@@ -25,8 +25,7 @@ module sim_top(
     input       [7:0] analog_p1,
     input       [7:0] analog_p2,
 
-    input       [7:0] dswa,
-    input       [7:0] dswb,
+    input       [7:0] dipswitch,
 
     output reg [26:0] sdr_addr,
     input      [63:0] sdr_q,
@@ -230,8 +229,7 @@ PGM pgm_inst(
     .analog_p1(analog_p1),
     .analog_p2(analog_p2),
     
-    .dswa(dswa),
-    .dswb(dswb),
+    .dipswitch(dipswitch),
     
     .sdr_cpu_addr(sdr_cpu_addr),
     .sdr_cpu_q(sdr_cpu_q),

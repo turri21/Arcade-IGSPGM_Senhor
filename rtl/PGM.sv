@@ -27,8 +27,7 @@ module PGM(
     input       [7:0] analog_p1,
     input       [7:0] analog_p2,
 
-    input       [7:0] dswa,
-    input       [7:0] dswb,
+    input       [7:0] dipswitch,
 
     output reg [26:0] sdr_cpu_addr,
     input      [63:0] sdr_cpu_q,
@@ -452,7 +451,7 @@ wire [15:0] IN1 = {
 
 // TODO - missing service, test and reset
 wire [15:0] IN2 = { 4'b0, joystick_p4[7], joystick_p3[7], joystick_p2[7], joystick_p1[7], 4'b0, coin[3:0] };
-wire [15:0] IN3 = { 8'b0, dswa };
+wire [15:0] IN3 = { 8'b0, dipswitch };
 
 
 assign IPLn = ss_irq ? ~3'b111 :
