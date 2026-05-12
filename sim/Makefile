@@ -82,6 +82,7 @@ HDL_SRC += ../rtl/audio_mix.sv ../sys/iir_filter.v
 HDL_SRC += ../rtl/rom_loader.sv
 HDL_SRC += ../rtl/igs023.sv ../rtl/igs023_fg.sv ../rtl/igs023_bg.sv ../rtl/igs023_sprite.sv ../rtl/igs023_buffer.sv
 HDL_SRC += ../rtl/igs026_x.sv
+HDL_SRC += ../rtl/pgm_asic3.sv
 HDL_SRC += ../rtl/v3021.sv
 HDL_SRC += ../rtl/ics2115/ics2115_pkg.sv ../rtl/ics2115/ics2115.sv ../rtl/ics2115/ics2115_osc.sv ../rtl/ics2115/ics2115_tables.sv
 HDL_SRC += sim_top.sv

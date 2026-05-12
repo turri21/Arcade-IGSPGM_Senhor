@@ -106,6 +106,7 @@ wire [15:0] cpu_data_in, cpu_data_out;
 wire [22:0] cpu_addr;
 wire [23:0] cpu_word_addr /* verilator public_flat */ = { cpu_addr, 1'b0 };
 wire IACKn = ~&cpu_fc;
+wire asic3_cs_n = !((cpu_word_addr[23:4] == 20'hc0400) && (~&cpu_ds_n));
 /////////////////////////////
 
 
@@ -487,6 +488,7 @@ assign cpu_data_in = ~SS_SAVEn ? ss_irq_handler[cpu_addr[3:0]] :
                      ~WORKRAMn ? workram_q :
                      ~IGS023n ? igs023_q :
                      ~IOn ? io_q :
+                     ~asic3_cs_n ? asic3_q :
                      ~IGS026_Xn ? igs026_x_q :
                      16'd0;
 
@@ -703,6 +705,7 @@ IGS023 #(.SS_IDX(SSIDX_IGS023)) igs023(
 );
 
 wire [15:0] igs026_x_q;
+wire [15:0] asic3_q;
 wire v3021_cs_n, v3021_wr_n;
 wire v3021_din, v3021_dout;
 
@@ -762,7 +765,7 @@ IGS026_X igs026_x(
     .cpu_lds_n(cpu_ds_n[0]),
     .cpu_uds_n(cpu_ds_n[1]),
     .cpu_rw(cpu_rw),
-    .cpu_cs_n(IGS026_Xn),
+    .cpu_cs_n(IGS026_Xn | ~asic3_cs_n),
 
     .v3021_cs_n,
     .v3021_wr_n,
@@ -798,6 +801,28 @@ IGS026_X igs026_x(
     .ics2115_wr_n,
     .ics2115_irq,
     .ics2115_ready
+);
+
+pgm_asic3 asic3(
+    .clk,
+    .reset,
+    .region(3'd0),
+
+    .cpu_addr(cpu_word_addr[3:0]),
+    .cpu_din(cpu_data_out),
+    .cpu_dout(asic3_q),
+    .cpu_lds_n(cpu_ds_n[0]),
+    .cpu_uds_n(cpu_ds_n[1]),
+    .cpu_rw(cpu_rw),
+    .cpu_cs_n(asic3_cs_n),
+
+    .debug_reg(),
+    .debug_latch0(),
+    .debug_latch1(),
+    .debug_latch2(),
+    .debug_x(),
+    .debug_hilo(),
+    .debug_hold()
 );
 
 V3021 v3021(

@@ -219,6 +219,7 @@ static const char *gGameNames[N_GAMES] = {
     "testbios",
     "pgm_test",
     "espgalbl",
+    "orlegend",
     "ketbl",
     "ddpdojblkbl",
     "kovbl",
@@ -315,6 +316,34 @@ static void LoadEspgalbl()
     gSimCore.mTop->rootp->sim_top__DOT__cart_music_base = 0x400000;
 
     gLoadedGameShortName = "espgalbl";
+    gSimCore.SetGame(GAME_PGM);
+}
+
+static void LoadOrlegend()
+{
+    LoadPgm();
+
+    gFileSearch.AddSearchPath("../roms/orlegend.zip");
+
+    LoadSdramData16be("p0103.rom", 0xd5e93543, CART_PROG_ROM_SDR_BASE);
+    LoadSdramData("pgm_t0100.u8", 0x61425e1e, CART_TILE_ROM_SDR_BASE);
+    LoadDdrData("pgm_a0100.u5", 0x8b3bd88a, CART_A_ROM_DDR_BASE + 0x0000000);
+    LoadDdrData("pgm_a0101.u6", 0x3b9e9644, CART_A_ROM_DDR_BASE + 0x0400000);
+    LoadDdrData("pgm_a0102.u7", 0x069e2c38, CART_A_ROM_DDR_BASE + 0x0800000);
+    LoadDdrData("pgm_a0103.u8", 0x4460a3fd, CART_A_ROM_DDR_BASE + 0x0c00000);
+    LoadDdrData("pgm_a0104.u11", 0x5f8abb56, CART_A_ROM_DDR_BASE + 0x1000000);
+    LoadDdrData("pgm_a0105.u12", 0xa17a7147, CART_A_ROM_DDR_BASE + 0x1400000);
+    LoadSdramData("pgm_b0100.u9", 0x69d2e48c, CART_B_ROM_SDR_BASE + 0x0000000);
+    LoadSdramData("pgm_b0101.u10", 0x0d587bf3, CART_B_ROM_SDR_BASE + 0x0400000);
+    LoadSdramData("pgm_b0102.u15", 0x43823c1e, CART_B_ROM_SDR_BASE + 0x0800000);
+    LoadSdramData("pgm_m0100.u1", 0xe5c36c83, CART_MUSIC_ROM_SDR_BASE);
+
+    gSimCore.mTop->rootp->sim_top__DOT__cart_present = 1;
+    gSimCore.mTop->rootp->sim_top__DOT__cart_prog_base = 0x100000;
+    gSimCore.mTop->rootp->sim_top__DOT__cart_tile_base = 0x180000;
+    gSimCore.mTop->rootp->sim_top__DOT__cart_music_base = 0x400000;
+
+    gLoadedGameShortName = "orlegend";
     gSimCore.SetGame(GAME_PGM);
 }
 
@@ -425,6 +454,9 @@ bool GameInit(Game game)
         break;
     case GAME_ESPGALBL:
         LoadEspgalbl();
+        break;
+    case GAME_ORLEGEND:
+        LoadOrlegend();
         break;
     case GAME_KETBL:
         LoadKetbl();
