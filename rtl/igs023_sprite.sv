@@ -54,7 +54,7 @@ reg [10:0] spr_x;
 reg [4:0] spr_x_scale;
 reg [9:0] spr_y;
 reg [4:0] spr_y_scale;
-reg [22:0] spr_brom_addr;
+reg [22:0] spr_brom_base_addr;
 reg spr_prio;
 reg [4:0] spr_palette;
 reg spr_x_flip;
@@ -76,24 +76,41 @@ typedef struct
 volatile_sprite_state_t sprite_state[256];
 volatile_sprite_state_t spr;
 
-wire [22:0] brom_word_address = spr_y_flip ? (spr_brom_addr - { 7'b0, spr.brom_offset }) : (spr_brom_addr + { 7'b0, spr.brom_offset });
-assign brom_address = { brom_word_address, 1'b0 };
+function automatic [22:0] brom_address_for_offset(input [15:0] offset);
+begin
+    brom_address_for_offset = spr_y_flip ? (spr_brom_base_addr - { 7'b0, offset }) : (spr_brom_base_addr + { 7'b0, offset });
+end
+endfunction
+
+function automatic [15:0] brom_extract(input [63:0] cache, input [15:0] offset);
+begin
+    bit [22:0] addr = brom_address_for_offset(offset);
+    case(addr[1:0])
+        0: brom_extract = cache[15:0];
+        1: brom_extract = cache[31:16];
+        2: brom_extract = cache[47:32];
+        3: brom_extract = cache[63:48];
+        default: brom_extract = 16'd0;
+    endcase
+end
+endfunction
+
+function automatic brom_is_last_in_cache(input [15:0] offset);
+begin
+    bit [22:0] addra = brom_address_for_offset(offset);
+    bit [22:0] addrb = brom_address_for_offset(offset + 16'd1);
+    brom_is_last_in_cache = addra[2] ^ addrb[2];
+end
+endfunction
+
+
+wire [22:0] brom_word_address = brom_address_for_offset(spr.brom_offset);
+wire [22:0] brom_aligned_word_address = { brom_word_address[22:2], 2'b00 };
+assign brom_address = { brom_aligned_word_address, 1'b0 };
 
 logic [15:0] spr_brom_data;
 always_comb begin
-    bit [1:0] ofs;
-    if (spr_y_flip)
-        ofs = ~spr.brom_offset[1:0];
-    else
-        ofs = spr.brom_offset[1:0];
-
-    case(ofs)
-        0: spr_brom_data = spr.brom_cache[15:0];
-        1: spr_brom_data = spr.brom_cache[31:16];
-        2: spr_brom_data = spr.brom_cache[47:32];
-        3: spr_brom_data = spr.brom_cache[63:48];
-        default: spr_brom_data = 0;
-    endcase
+    spr_brom_data = brom_extract(spr.brom_cache, spr.brom_offset);
 end
 
 wire spr_load = dma_state == PRESCAN_LOAD || dma_state == DRAW_SEARCH_ACTIVE_LOAD;
@@ -233,6 +250,7 @@ reg [7:0] draw_line;
 arom_offset_t pixel0_offset, pixel1_offset;
 wire buffer_ready;
 reg draw_complete;
+reg [15:0] initial_addr_low;
 
 // tmp_* are temporary
 // spr_* are immutable per sprite values
@@ -273,9 +291,9 @@ always_ff @(posedge clk) begin
             tmp_width = sprite_d4[sprite_index][14:9];
             tmp_brom_addr = { sprite_d2[sprite_index][6:0], sprite_d3[sprite_index] };
             if (tmp_y_flip) begin
-                spr_brom_addr <= tmp_brom_addr + ({17'b0, tmp_width} * {14'b0, tmp_height});
+                spr_brom_base_addr <= tmp_brom_addr + 32'd3 + ({17'b0, tmp_width} * {14'b0, tmp_height});
             end else begin
-                spr_brom_addr <= tmp_brom_addr;
+                spr_brom_base_addr <= tmp_brom_addr;
             end
             spr_prio <= sprite_d2[sprite_index][7];
             spr_palette <= sprite_d2[sprite_index][12:8];
@@ -364,12 +382,36 @@ always_ff @(posedge clk) begin
             PRESCAN_INITIAL_BROM_WAIT: begin
                 if (brom_req == brom_ack) begin
                     spr.brom_cache <= brom_data;
-                    dma_state <= PRESCAN_SCAN_TO_START;
-                    spr.brom_offset <= 2;
-                    tmp_addr32 = spr_y_flip ? { brom_data[47:32], brom_data[63:48] } : { brom_data[31:0] };
+                    initial_addr_low <= brom_extract(brom_data, 0);
+                    if (brom_is_last_in_cache(0)) begin
+                        spr.brom_offset <= 1;
+                        brom_req <= ~brom_req;
+                        dma_state <= PRESCAN_INITIAL_NEXT;
+                    end else begin
+                        tmp_addr32 = { brom_extract(brom_data, 1), brom_extract(brom_data, 0) };
+                        spr.arom_offset.words <= tmp_addr32[25:2];
+                        spr.arom_offset.sub <= tmp_addr32[1:0];
+                        spr.brom_offset <= 2;
+                        spr.active <= 1;
+                        if (brom_is_last_in_cache(1)) begin
+                            brom_req <= ~brom_req;
+                            dma_state <= PRESCAN_BROM_WAIT;
+                        end else begin
+                            dma_state <= PRESCAN_SCAN_TO_START;
+                        end
+                    end
+                end
+            end
+
+            PRESCAN_INITIAL_NEXT: begin
+                if (brom_req == brom_ack) begin
+                    spr.brom_cache <= brom_data;
+                    tmp_addr32 = { brom_extract(brom_data, 1), initial_addr_low };
                     spr.arom_offset.words <= tmp_addr32[25:2];
                     spr.arom_offset.sub <= tmp_addr32[1:0];
+                    spr.brom_offset <= 2;
                     spr.active <= 1;
+                    dma_state <= PRESCAN_SCAN_TO_START;
                 end
             end
 
@@ -380,7 +422,7 @@ always_ff @(posedge clk) begin
                     spr.arom_offset <= inc_offset(spr.arom_offset, count_zeros16(spr_brom_data));
                     spr.brom_offset <= spr.brom_offset + 1;
                     tmp_x <= tmp_x + 1;
-                    if (spr.brom_offset[1:0] == 2'b11) begin
+                    if (brom_is_last_in_cache(spr.brom_offset)) begin
                         brom_req <= ~brom_req;
                         dma_state <= PRESCAN_BROM_WAIT;
                     end
@@ -495,7 +537,7 @@ always_ff @(posedge clk) begin
                     if (tmp_shift_count == 14) begin
                         spr.brom_offset <= spr.brom_offset + 1;
                         tmp_x <= tmp_x + 1;
-                        if (spr.brom_offset[1:0] == 2'b11) begin
+                        if (brom_is_last_in_cache(spr.brom_offset)) begin
                             brom_req <= ~brom_req;
                             dma_state <= DRAW_BROM_WAIT;
                         end else begin

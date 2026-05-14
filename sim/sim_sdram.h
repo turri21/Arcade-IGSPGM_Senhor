@@ -94,9 +94,18 @@ class SimSDRAM : public MemoryInterface
 
         if (rw)
         {
-            *dout = ((uint64_t)mData[addr + 7] << 56) | ((uint64_t)mData[addr + 6] << 48) | ((uint64_t)mData[addr + 5] << 40) |
-                    ((uint64_t)mData[addr + 4] << 32) | ((uint64_t)mData[addr + 3] << 24) | ((uint64_t)mData[addr + 2] << 16) |
-                    ((uint64_t)mData[addr + 1] << 8) | ((uint64_t)mData[addr + 0]);
+            const uint32_t burstBase = addr & ~uint32_t(7);
+            const uint32_t startHalfword = (addr >> 1) & 3;
+            uint64_t value = 0;
+            for (uint32_t beat = 0; beat < 4; beat++)
+            {
+                const uint32_t halfword = (startHalfword + beat) & 3;
+                const uint32_t wordAddr = (burstBase + halfword * 2) & mMask;
+                const uint16_t word = static_cast<uint16_t>(mData[wordAddr + 0]) |
+                                      (static_cast<uint16_t>(mData[(wordAddr + 1) & mMask]) << 8);
+                value |= static_cast<uint64_t>(word) << (beat * 16);
+            }
+            *dout = value;
             *ack = req;
         }
         else
