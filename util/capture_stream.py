@@ -3,6 +3,8 @@ import argparse
 import collections
 import glob
 import json
+import os
+import select
 import signal
 import struct
 import sys
@@ -35,12 +37,66 @@ class StreamSource:
         self._stream.close()
 
 
+class PosixSerialSource:
+    live = True
+
+    def __init__(self, port):
+        import termios
+
+        self._termios = termios
+        self._fd = os.open(port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        self._old_attrs = termios.tcgetattr(self._fd)
+        attrs = termios.tcgetattr(self._fd)
+        attrs[0] = 0
+        attrs[1] = 0
+        attrs[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
+        attrs[3] = 0
+        attrs[4] = termios.B115200
+        attrs[5] = termios.B115200
+        attrs[6][termios.VMIN] = 0
+        attrs[6][termios.VTIME] = 0
+        termios.tcsetattr(self._fd, termios.TCSANOW, attrs)
+        self._set_modem_lines()
+
+    def _set_modem_lines(self):
+        try:
+            import fcntl
+
+            termios = self._termios
+            if hasattr(termios, 'TIOCMBIS') and hasattr(termios, 'TIOCMBIC'):
+                if hasattr(termios, 'TIOCM_DTR'):
+                    fcntl.ioctl(self._fd, termios.TIOCMBIS, struct.pack('I', termios.TIOCM_DTR))
+                if hasattr(termios, 'TIOCM_RTS'):
+                    fcntl.ioctl(self._fd, termios.TIOCMBIC, struct.pack('I', termios.TIOCM_RTS))
+        except OSError:
+            pass
+
+    def read(self, size):
+        ready, _, _ = select.select([self._fd], [], [], POLL_S)
+        if not ready:
+            return b''
+        try:
+            return os.read(self._fd, size)
+        except BlockingIOError:
+            return b''
+
+    def close(self):
+        try:
+            self._termios.tcsetattr(self._fd, self._termios.TCSANOW, self._old_attrs)
+        finally:
+            os.close(self._fd)
+
+
 class SerialSource(StreamSource):
     def __init__(self, port):
         try:
             import serial
-        except ImportError as exc:
-            raise SystemExit('pyserial is required for serial capture mode') from exc
+        except ImportError:
+            print('pyserial not found; using POSIX serial fallback', file=sys.stderr)
+            fallback = PosixSerialSource(port)
+            self.__class__ = PosixSerialSource
+            self.__dict__ = fallback.__dict__
+            return
 
         ser = serial.Serial()
         ser.port = port
@@ -77,9 +133,15 @@ def choose_port(explicit):
     return ports[0] if ports else None
 
 
-def sync_to_magic(source, buf):
+def deadline_reached(deadline):
+    return deadline is not None and time.time() >= deadline
+
+
+def sync_to_magic(source, buf, deadline=None):
     magic = struct.pack('<I', MAGIC)
     while True:
+        if deadline_reached(deadline):
+            return False
         idx = buf.find(magic)
         if idx >= 0:
             if idx:
@@ -94,8 +156,10 @@ def sync_to_magic(source, buf):
         buf.extend(data)
 
 
-def read_exact(source, buf, size):
+def read_exact(source, buf, size, deadline=None):
     while len(buf) < size:
+        if deadline_reached(deadline):
+            return None
         data = source.read(READ_SIZE)
         if not data:
             if stop_requested or not source.live:
@@ -164,7 +228,8 @@ def open_source(args):
         print('No serial port found', file=sys.stderr)
         return None, None
 
-    print(f'Opening {port}', flush=True)
+    if not getattr(args, 'print_sample_changes', False):
+        print(f'Opening {port}', flush=True)
     return SerialSource(port), port
 
 
@@ -177,9 +242,13 @@ def main():
     parser.add_argument('--input', help='Read packet stream from a binary file instead of a serial port')
     parser.add_argument('--duration', type=float, default=10.0,
                         help='Capture duration in seconds for serial mode (default: 10)')
+    parser.add_argument('--endless', action='store_true',
+                        help='In serial mode, capture until Ctrl-C instead of stopping after --duration')
     parser.add_argument('--sample-rate', type=int, help='Override WAV sample rate metadata')
     parser.add_argument('--summary-json', help='Optional path for summary JSON output')
     parser.add_argument('--strict', action='store_true', help='Exit non-zero if packet/frame gaps are detected')
+    parser.add_argument('--print-sample-changes', action='store_true',
+                        help='Print left/right sample values whenever either channel changes')
     args = parser.parse_args()
 
     if args.input and args.port:
@@ -192,6 +261,8 @@ def main():
     summary_path = Path(args.summary_json) if args.summary_json else output_path.with_suffix(output_path.suffix + '.summary.json')
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    if hasattr(signal, 'SIGPIPE'):
+        signal.signal(signal.SIGPIPE, signal.SIG_DFL)
     signal.signal(signal.SIGINT, on_signal)
     signal.signal(signal.SIGTERM, on_signal)
 
@@ -207,7 +278,7 @@ def main():
     malformed_status_packets = 0
     first_packet_time = None
     first_audio_time = None
-    deadline = None if args.input else (time.time() + args.duration if args.duration > 0 else None)
+    deadline = None if args.input or args.endless else (time.time() + args.duration if args.duration > 0 else None)
     expected_block_seq = None
     expected_frame_start = None
     block_gap_count = 0
@@ -216,21 +287,22 @@ def main():
     status_drop_reports = 0
     max_queue_depth = 0
     latest_status = None
+    last_printed_sample = None
 
     with raw_path.open('wb') as raw_file, jsonl_path.open('w', encoding='utf-8') as jsonl:
         try:
             while not stop_requested:
                 if deadline is not None and time.time() >= deadline:
                     break
-                if not sync_to_magic(source, buf):
+                if not sync_to_magic(source, buf, deadline):
                     break
-                hdr_data = read_exact(source, buf, HDR_SIZE)
+                hdr_data = read_exact(source, buf, HDR_SIZE, deadline)
                 if hdr_data is None:
                     break
                 hdr = decode_header(hdr_data)
                 if hdr['magic'] != MAGIC:
                     continue
-                payload = read_exact(source, buf, hdr['payload_bytes'])
+                payload = read_exact(source, buf, hdr['payload_bytes'], deadline)
                 if payload is None:
                     break
 
@@ -249,6 +321,17 @@ def main():
                         first_audio_time = now
                     audio_packets += 1
                     raw_file.write(payload)
+                    if args.print_sample_changes:
+                        for sample_index in range(0, len(payload) - 3, 4):
+                            left, right = struct.unpack_from('<hh', payload, sample_index)
+                            sample = (left, right)
+                            if sample != last_printed_sample:
+                                print(
+                                    f'frame={hdr["frame_start"] + sample_index // 4} '
+                                    f'L={left} R={right}',
+                                    flush=True,
+                                )
+                                last_printed_sample = sample
                     total_frames += hdr['frame_count']
                     if hdr['raw_lrclk_hz']:
                         rate_counter[hdr['raw_lrclk_hz']] += hdr['frame_count']
@@ -276,7 +359,7 @@ def main():
 
                 jsonl.write(json.dumps(record) + '\n')
 
-                if source.live and (audio_packets + status_packets) % 50 == 0:
+                if source.live and not args.print_sample_changes and (audio_packets + status_packets) % 50 == 0:
                     ref = first_audio_time or first_packet_time or now
                     elapsed = max(now - ref, 0.001)
                     print(
@@ -312,14 +395,15 @@ def main():
     }
     summary_path.write_text(json.dumps(summary, indent=2) + '\n', encoding='utf-8')
 
-    print(
-        f'Wrote {output_path} rate={sample_rate} frames={total_frames} '
-        f'audio_packets={audio_packets} status_packets={status_packets} '
-        f'frame_gaps={frame_gap_count} block_gaps={block_gap_count}',
-        flush=True,
-    )
-    print(f'Metadata: {jsonl_path}', flush=True)
-    print(f'Summary: {summary_path}', flush=True)
+    if not args.print_sample_changes:
+        print(
+            f'Wrote {output_path} rate={sample_rate} frames={total_frames} '
+            f'audio_packets={audio_packets} status_packets={status_packets} '
+            f'frame_gaps={frame_gap_count} block_gaps={block_gap_count}',
+            flush=True,
+        )
+        print(f'Metadata: {jsonl_path}', flush=True)
+        print(f'Summary: {summary_path}', flush=True)
 
     if args.strict and (block_gap_count or frame_gap_count or malformed_status_packets):
         return 2

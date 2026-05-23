@@ -9,7 +9,8 @@ MISTER_HOSTNAME=mister-dev
 TARGET = pgm_test
 
 SRCS =  init.c main.c util.c page.c gui.c igs023.c
-SRCS += interrupts_default.c comms.c tilemap.c input.c color.c printf/printf.c
+SRCS += interrupts_default.c tilemap.c input.c color.c printf/printf.c
+SRCS += z80_ics_host.c debug_link.c
 
 ifeq ($(strip $(PAGE)),)
 #SRCS += pages/system_basics.c
@@ -21,6 +22,7 @@ SRCS += pages/sprite_test.c
 #SRCS += pages/fg_test.c
 #SRCS += pages/bg_test.c
 #SRCS += pages/z80_ctrl.c
+SRCS += pages/debug.c
 else
 SRCS += pages/$(PAGE).c
 endif
@@ -31,10 +33,16 @@ PGM_ROM_DIR ?= ../roms
 PAGE_BUILD_ID := $(if $(strip $(PAGE)),$(PAGE),all-pages)
 PAGE_STAMP := $(BUILD_DIR)/.page-$(PAGE_BUILD_ID)
 
+SDCC = sdcc
+SDASZ80 = sdasz80
+Z80_DRIVER_RELS = $(BUILD_DIR)/z80_ics_driver_crt0.rel $(BUILD_DIR)/z80_ics_driver.rel
+Z80_DRIVER_IHX = $(BUILD_DIR)/z80_ics_driver.ihx
+Z80_DRIVER_HEADER = $(BUILD_DIR)/z80_ics_driver_data.h
+
 OBJS = $(addprefix $(BUILD_DIR)/, $(SRCS:c=o)) \
 	   $(addprefix $(BUILD_DIR)/, $(ASM:s=o))
 BUILD_DIRS = $(sort $(dir $(OBJS))) 
-GLOBAL_DEPS = Makefile
+GLOBAL_DEPS = Makefile $(Z80_DRIVER_HEADER)
 
 DEFINES = -DPRINTF_SUPPORT_DECIMAL_SPECIFIERS=0 \
 	-DPRINTF_SUPPORT_EXPONENTIAL_SPECIFIERS=0 \
@@ -42,7 +50,7 @@ DEFINES = -DPRINTF_SUPPORT_DECIMAL_SPECIFIERS=0 \
 	-DPRINTF_ALIAS_STANDARD_FUNCTION_NAMES=1 \
 	-DPRINTF_ALIAS_STANDARD_FUNCTION_NAMES_HARD=1
 
-CFLAGS = -march=68000 -ffreestanding $(DEFINES) -O2 --std=c2x -g
+CFLAGS = -march=68000 -ffreestanding $(DEFINES) -O2 --std=c2x -g -I$(BUILD_DIR)
 LIBS = -lgcc
 LDFLAGS = -march=68000 -static -nostdlib -g
 
@@ -79,6 +87,22 @@ $(BUILD_DIR)/%.o: %.c $(GLOBAL_DEPS) | $(BUILD_DIRS)
 $(BUILD_DIR)/%.o: %.s $(GLOBAL_DEPS) | $(BUILD_DIRS)
 	@echo $@
 	@$(CC) -MMD -o $@ $(CFLAGS) -c $<
+
+$(BUILD_DIR)/z80_ics_driver.rel: z80_ics_driver.c z80_ics_protocol.h | $(BUILD_DIR)
+	@echo $@
+	@$(SDCC) -mz80 --std-c99 --opt-code-size --no-std-crt0 --code-loc 0x0100 --data-loc 0x6000 -c -o $@ $<
+
+$(BUILD_DIR)/z80_ics_driver_crt0.rel: z80_ics_driver_crt0.s | $(BUILD_DIR)
+	@echo $@
+	@$(SDASZ80) -o $@ $<
+
+$(Z80_DRIVER_IHX): $(Z80_DRIVER_RELS) | $(BUILD_DIR)
+	@echo $@
+	@$(SDCC) -mz80 --no-std-crt0 --code-loc 0x0100 --data-loc 0x6000 -o $@ $(Z80_DRIVER_RELS)
+
+$(Z80_DRIVER_HEADER): $(Z80_DRIVER_IHX) z80_ihx_to_c.py | $(BUILD_DIR)
+	@echo $@
+	@python3 z80_ihx_to_c.py $(Z80_DRIVER_IHX) $@ z80_ics_driver_blob
 
 $(BUILD_DIR)/%.o: %.chr $(GLOBAL_DEPS) | $(BUILD_DIRS)
 	$(OBJCOPY) -I binary -O default $< $@
