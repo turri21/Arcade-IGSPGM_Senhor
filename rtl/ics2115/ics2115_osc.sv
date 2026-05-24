@@ -2,12 +2,11 @@
 // Processes one voice per invocation: ROM fetch → interpolation → volume/pan → mix
 //
 // Processing order per spec §8.4 and MAME fill_output():
-//   1. Volume/pan/ramp lookup (using CURRENT vol.acc)
+//   1. Volume/pan lookup (using CURRENT vol.acc)
 //   2. Sample fetch and interpolation (at CURRENT osc.acc position)
 //   3. Scale sample by volume, accumulate into stereo bus
-//   4. Ramp update (slow attack/release)
-//   5. Oscillator accumulator update — happens AFTER sample fetch
-//   6. Oscillator boundary check (loop/stop)
+//   4. Oscillator accumulator update — happens AFTER sample fetch
+//   5. Oscillator boundary check (loop/stop)
 
 module ics2115_osc
     import ics2115_pkg::*;
@@ -70,7 +69,6 @@ module ics2115_osc
         ST_MIX              = 5'd10,
         ST_OSC_UPDATE       = 5'd11,
         ST_BOUNDARY_CHECK   = 5'd12,
-        ST_RAMP_UPDATE      = 5'd13,
         ST_VOL_ENV_UPDATE   = 5'd14,    // volume envelope accumulator update
         ST_VOL_ENV_BOUNDARY = 5'd15,    // volume envelope boundary handling
         ST_DONE             = 5'd16
@@ -86,8 +84,8 @@ module ics2115_osc
     logic [11:0] volacc;                // (vol.acc >> 14) & 0xFFF
     logic signed [12:0] vlefti_s;       // signed left vol index
     logic signed [12:0] vrighti_s;      // signed right vol index
-    logic [15:0] vleft;                 // left volume after ramp
-    logic [15:0] vright;                // right volume after ramp
+    logic [15:0] vleft;                 // left volume
+    logic [15:0] vright;                // right volume
 
     logic signed [15:0] sample1;
     logic signed [15:0] sample2;
@@ -194,8 +192,7 @@ module ics2115_osc
             ST_INTERPOLATE:    state_next = ST_MIX;
             ST_MIX:            state_next = ST_OSC_UPDATE;
             ST_OSC_UPDATE:     state_next = ST_BOUNDARY_CHECK;
-            ST_BOUNDARY_CHECK: state_next = ST_RAMP_UPDATE;
-            ST_RAMP_UPDATE:      state_next = ST_VOL_ENV_UPDATE;
+            ST_BOUNDARY_CHECK: state_next = ST_VOL_ENV_UPDATE;
             ST_VOL_ENV_UPDATE:   state_next = ST_VOL_ENV_BOUNDARY;  // overridden to ST_DONE in datapath
             ST_VOL_ENV_BOUNDARY: state_next = ST_DONE;
             ST_DONE:             state_next = ST_IDLE;
@@ -319,9 +316,9 @@ module ics2115_osc
                 // issue first ROM read (sample1)
                 // ─────────────────────────────────────────────────────────────
                 ST_SAMPLE_FETCH_1: begin
-                    // Left volume arrived (1-cycle latency). Apply ramp.
+                    // Left volume arrived (1-cycle latency).
                     if (vlefti_s > 13'sd0)
-                        vleft <= ({16'd0, vol_tbl_data} * {25'd0, v.state_ramp}) >> RAMP_SHIFT;
+                        vleft <= vol_tbl_data;
                     else
                         vleft <= 16'd0;
 
@@ -351,9 +348,9 @@ module ics2115_osc
                 // Read right vol result. Issue ROM read for sample2.
                 // ─────────────────────────────────────────────────────────────
                 ST_SAMPLE_FETCH_2: begin
-                    // Right volume arrived. Apply ramp.
+                    // Right volume arrived.
                     if (vrighti_s > 13'sd0)
-                        vright <= ({16'd0, vol_tbl_data} * {25'd0, v.state_ramp}) >> RAMP_SHIFT;
+                        vright <= vol_tbl_data;
                     else
                         vright <= 16'd0;
 
@@ -430,11 +427,7 @@ module ics2115_osc
                 // MIX: Scale interpolated sample by volume, output audio
                 // ─────────────────────────────────────────────────────────────
                 ST_MIX: begin
-                    // Contribute if vmode==0 OR voice is playing (spec §8.3)
-                    if (vmode == 8'd0 || voice_playing) begin
-                        // MAME: >> 20 = >> (5 + VOLUME_BITS)
-                        // MJD_TODO: Changed to just 15, I don't think it is
-                        // adjusting my voice count here
+                    if (voice_playing) begin
                         audio_left  <= mix_l >>> 15;
                         audio_right <= mix_r >>> 15;
                     end else begin
@@ -494,21 +487,6 @@ module ics2115_osc
                             else
                                 v.osc_acc <= v.osc_start;
                         end
-                    end
-                end
-
-                // ─────────────────────────────────────────────────────────────
-                // RAMP_UPDATE: Slow attack/release (spec §7.5)
-                // ─────────────────────────────────────────────────────────────
-                ST_RAMP_UPDATE: begin
-                    if (v.state_on && !v.osc_conf[OSC_STOP]) begin
-                        // Slow attack
-                        if (v.state_ramp < MAX_RAMP)
-                            v.state_ramp <= v.state_ramp + 7'd1;
-                    end else begin
-                        // Slow release
-                        if (v.state_ramp > 7'd0)
-                            v.state_ramp <= v.state_ramp - 7'd1;
                     end
                 end
 

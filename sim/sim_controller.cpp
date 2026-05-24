@@ -808,22 +808,21 @@ ControllerResult<Ics2115DebugState> SimController::GetIcs2115DebugState() const
         const auto &wide = root->sim_top__DOT__pgm_inst__DOT__ics2115__DOT__voice_ram__DOT__ram[i];
         Ics2115VoiceState voice;
         voice.mIndex = i;
-        voice.mStateRamp = GetWideBits(wide, 0, 7);
-        voice.mStateOn = GetWideBits(wide, 7, 1) != 0;
-        voice.mVolMode = GetWideBits(wide, 8, 8);
-        voice.mVolCtrl = GetWideBits(wide, 16, 8);
-        voice.mVolPan = GetWideBits(wide, 24, 8);
-        voice.mVolIncr = GetWideBits(wide, 32, 8);
-        voice.mVolEnd = GetWideBits(wide, 40, 26);
-        voice.mVolStart = GetWideBits(wide, 66, 26);
-        voice.mVolAcc = GetWideBits(wide, 92, 26);
-        voice.mOscCtl = GetWideBits(wide, 118, 8);
-        voice.mOscConf = GetWideBits(wide, 126, 8);
-        voice.mOscSaddr = GetWideBits(wide, 134, 8);
-        voice.mOscEnd = GetWideBits(wide, 142, 29);
-        voice.mOscStart = GetWideBits(wide, 171, 29);
-        voice.mOscFc = GetWideBits(wide, 200, 16);
-        voice.mOscAcc = GetWideBits(wide, 216, 29);
+        voice.mStateOn = GetWideBits(wide, 0, 1) != 0;
+        voice.mVolMode = GetWideBits(wide, 1, 8);
+        voice.mVolCtrl = GetWideBits(wide, 9, 8);
+        voice.mVolPan = GetWideBits(wide, 17, 8);
+        voice.mVolIncr = GetWideBits(wide, 25, 8);
+        voice.mVolEnd = GetWideBits(wide, 33, 26);
+        voice.mVolStart = GetWideBits(wide, 59, 26);
+        voice.mVolAcc = GetWideBits(wide, 85, 26);
+        voice.mOscCtl = GetWideBits(wide, 111, 8);
+        voice.mOscConf = GetWideBits(wide, 119, 8);
+        voice.mOscSaddr = GetWideBits(wide, 127, 8);
+        voice.mOscEnd = GetWideBits(wide, 135, 29);
+        voice.mOscStart = GetWideBits(wide, 164, 29);
+        voice.mOscFc = GetWideBits(wide, 193, 16);
+        voice.mOscAcc = GetWideBits(wide, 209, 29);
 
         if (voice.mOscConf & 0x80)
             result.mOscIrqPendingCount++;

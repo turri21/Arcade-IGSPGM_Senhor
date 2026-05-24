@@ -163,7 +163,6 @@ struct Ics2115VoiceState
     uint8_t mVolCtrl = 0;
     uint8_t mVolMode = 0;
     bool mStateOn = false;
-    uint8_t mStateRamp = 0;
 };
 
 struct Ics2115DebugState

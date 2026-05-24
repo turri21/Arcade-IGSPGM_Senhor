@@ -9,8 +9,6 @@ package ics2115_pkg;
     localparam CHIP_REVISION      = 8'h01;
     localparam NUM_VOICES         = 32;
     localparam DEFAULT_ACTIVE_OSC = 5'd31;
-    localparam MAX_RAMP           = 7'd64;      // 0x40 — unity gain in ramp
-    localparam RAMP_SHIFT         = 6;           // ramp is divided by 64
     localparam VOLUME_BITS        = 15;          // volume table output width
     localparam VOLUME_TABLE_SIZE  = 4096;
     localparam PAN_TABLE_SIZE     = 256;
@@ -64,7 +62,6 @@ package ics2115_pkg;
     // vol_mode:  8-bit — mode register (reserved, write 0)
     //
     // state_on:   1-bit — voice is keyed on
-    // state_ramp: 7-bit — ramp value (0-64)
     // =========================================================================
     typedef struct packed {
         // Oscillator fields
@@ -87,7 +84,6 @@ package ics2115_pkg;
 
         // Voice runtime state
         logic        state_on;    // voice is keyed on
-        logic [6:0]  state_ramp;  // ramp value (0-64)
     } voice_state_t;
 
     // =========================================================================

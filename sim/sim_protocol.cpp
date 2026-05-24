@@ -736,7 +736,6 @@ JsonValue Ics2115VoiceToJson(const Ics2115VoiceState &voice)
         {"vol_ctrl", JsonValue::Number(voice.mVolCtrl)},
         {"vol_mode", JsonValue::Number(voice.mVolMode)},
         {"state_on", JsonValue::Bool(voice.mStateOn)},
-        {"state_ramp", JsonValue::Number(voice.mStateRamp)},
     });
 }
 

@@ -130,16 +130,64 @@ module ics2115
     wire ss_voice_access_now = ss_access_now && (ssbus.addr < VOICE_SS_WORDS[31:0]);
     wire ss_busy_local = (ss_state != SS_IDLE) || ss_voice_access_now;
 
+    // Save-state voice layout compatibility:
+    // older save states stored 8 words/voice with a 7-bit legacy ramp field in
+    // bits [6:0].  The hardware has no such field, so keep those bits as zero
+    // on save and ignore them on load while preserving the old 256-bit layout.
+    function automatic logic [255:0] pack_voice_legacy(input logic [VOICE_BITS-1:0] voice);
+        voice_state_t v;
+        v = voice_state_t'(voice);
+        pack_voice_legacy = '0;
+        pack_voice_legacy[7]       = v.state_on;
+        pack_voice_legacy[15:8]    = v.vol_mode;
+        pack_voice_legacy[23:16]   = v.vol_ctrl;
+        pack_voice_legacy[31:24]   = v.vol_pan;
+        pack_voice_legacy[39:32]   = v.vol_incr;
+        pack_voice_legacy[65:40]   = v.vol_end;
+        pack_voice_legacy[91:66]   = v.vol_start;
+        pack_voice_legacy[117:92]  = v.vol_acc;
+        pack_voice_legacy[125:118] = v.osc_ctl;
+        pack_voice_legacy[133:126] = v.osc_conf;
+        pack_voice_legacy[141:134] = v.osc_saddr;
+        pack_voice_legacy[170:142] = v.osc_end;
+        pack_voice_legacy[199:171] = v.osc_start;
+        pack_voice_legacy[215:200] = v.osc_fc;
+        pack_voice_legacy[244:216] = v.osc_acc;
+    endfunction
+
+    function automatic voice_state_t unpack_voice_legacy(input logic [255:0] legacy);
+        voice_state_t v;
+        v = '0;
+        v.state_on  = legacy[7];
+        v.vol_mode  = legacy[15:8];
+        v.vol_ctrl  = legacy[23:16];
+        v.vol_pan   = legacy[31:24];
+        v.vol_incr  = legacy[39:32];
+        v.vol_end   = legacy[65:40];
+        v.vol_start = legacy[91:66];
+        v.vol_acc   = legacy[117:92];
+        v.osc_ctl   = legacy[125:118];
+        v.osc_conf  = legacy[133:126];
+        v.osc_saddr = legacy[141:134];
+        v.osc_end   = legacy[170:142];
+        v.osc_start = legacy[199:171];
+        v.osc_fc    = legacy[215:200];
+        v.osc_acc   = legacy[244:216];
+        return v;
+    endfunction
+
     function automatic [31:0] get_voice_word(input logic [VOICE_BITS-1:0] voice, input logic [2:0] word_idx);
+        logic [255:0] legacy;
+        legacy = pack_voice_legacy(voice);
         case (word_idx)
-            3'd0: get_voice_word = voice[31:0];
-            3'd1: get_voice_word = voice[63:32];
-            3'd2: get_voice_word = voice[95:64];
-            3'd3: get_voice_word = voice[127:96];
-            3'd4: get_voice_word = voice[159:128];
-            3'd5: get_voice_word = voice[191:160];
-            3'd6: get_voice_word = voice[223:192];
-            default: get_voice_word = {{(256-VOICE_BITS){1'b0}}, voice[VOICE_BITS-1:224]};
+            3'd0: get_voice_word = legacy[31:0];
+            3'd1: get_voice_word = legacy[63:32];
+            3'd2: get_voice_word = legacy[95:64];
+            3'd3: get_voice_word = legacy[127:96];
+            3'd4: get_voice_word = legacy[159:128];
+            3'd5: get_voice_word = legacy[191:160];
+            3'd6: get_voice_word = legacy[223:192];
+            default: get_voice_word = legacy[255:224];
         endcase
     endfunction
 
@@ -148,19 +196,19 @@ module ics2115
         input logic [2:0] word_idx,
         input logic [31:0] data
     );
-        logic [VOICE_BITS-1:0] result;
-        result = voice;
+        logic [255:0] legacy;
+        legacy = pack_voice_legacy(voice);
         case (word_idx)
-            3'd0: result[31:0] = data;
-            3'd1: result[63:32] = data;
-            3'd2: result[95:64] = data;
-            3'd3: result[127:96] = data;
-            3'd4: result[159:128] = data;
-            3'd5: result[191:160] = data;
-            3'd6: result[223:192] = data;
-            default: result[VOICE_BITS-1:224] = data[VOICE_BITS-225:0];
+            3'd0: legacy[31:0] = data;
+            3'd1: legacy[63:32] = data;
+            3'd2: legacy[95:64] = data;
+            3'd3: legacy[127:96] = data;
+            3'd4: legacy[159:128] = data;
+            3'd5: legacy[191:160] = data;
+            3'd6: legacy[223:192] = data;
+            default: legacy[255:224] = data;
         endcase
-        return result;
+        return unpack_voice_legacy(legacy);
     endfunction
 
     // =========================================================================
@@ -750,7 +798,6 @@ module ics2115
                     result.osc_ctl = data[7:0];
                     if (data[7:0] == 8'h00) begin
                         result.state_on = 1'b1;
-                        result.state_ramp = MAX_RAMP;
                         result.osc_conf[OSC_STOP] = 1'b0;
                     end else if (data[7:0] == 8'h0F) begin
                         result.state_on = 1'b0;

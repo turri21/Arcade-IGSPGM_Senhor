@@ -340,7 +340,6 @@ class Ics2115Window : public Window
             ImGui::TableSetupScrollFreeze(0, 1);
             ImGui::TableSetupColumn("#");
             ImGui::TableSetupColumn("On");
-            ImGui::TableSetupColumn("Ramp");
             ImGui::TableSetupColumn("Wave", ImGuiTableColumnFlags_WidthFixed, 72.0f);
             ImGui::TableSetupColumn("Vol", ImGuiTableColumnFlags_WidthFixed, 72.0f);
             ImGui::TableSetupColumn("OConf");
@@ -367,7 +366,6 @@ class Ics2115Window : public Window
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn(); ImGui::Text("%u", voice.mIndex);
                 ImGui::TableNextColumn(); ImGui::Text("%d", voice.mStateOn ? 1 : 0);
-                ImGui::TableNextColumn(); ImGui::Text("%u", voice.mStateRamp);
                 ImGui::TableNextColumn(); PlotWaveHistory("##wave", gHistory.mVoiceWave[voice.mIndex], ImVec2(64.0f, 22.0f));
                 ImGui::TableNextColumn(); PlotHistory("##vol", gHistory.mVoiceVolume[voice.mIndex], ImVec2(64.0f, 22.0f), 0.0f, 1.0f);
                 ImGui::TableNextColumn(); ImGui::Text("%02x", voice.mOscConf);

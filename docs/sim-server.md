@@ -717,7 +717,7 @@ Each voice record includes:
 
 - oscillator fields: `osc_acc`, `osc_fc`, `osc_start`, `osc_end`, `osc_saddr`, `osc_conf`, `osc_ctl`
 - volume fields: `vol_acc`, `vol_start`, `vol_end`, `vol_incr`, `vol_pan`, `vol_ctrl`, `vol_mode`
-- runtime fields: `state_on`, `state_ramp`
+- runtime fields: `state_on`
 
 ## TestROM GUI mirroring
 
