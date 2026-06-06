@@ -80,10 +80,21 @@ module memory_stream #(parameter COUNT = 32)
         end
     end
 
+    // Only hold the DDR bus while actually issuing/awaiting a DDR read or write.
+    // The gather/scatter/query states wait on the ssbus, not DDR, so we release
+    // acquire there; this lets other DDR clients (e.g. the iram write-back cache,
+    // which must fill/writeback to serve an ssbus word) use the bus between our
+    // accesses.  We re-acquire on the next DDR op and, being highest priority,
+    // reclaim it at the requester's transaction boundary.
+    assign ddr.acquire = (state == READ_HEADER)         || (state == READ_HEADER_WAIT)  ||
+                         (state == WRITE_HEADER)        || (state == WRITE_HEADER_WAIT) ||
+                         (state == READ_MEM_REQ)        || (state == READ_MEM_WAIT)     ||
+                         (state == WRITE_MEM_REQ)       || (state == WRITE_MEM_WAIT)    ||
+                         (state == WRITE_MEM_FINAL_REQ) || (state == WRITE_MEM_FINAL_WAIT);
+
     always_ff @(posedge clk) begin
         if (reset) begin
             state <= IDLE;
-            ddr.acquire <= 0;
             ddr.read <= 0;
             ddr.write <= 0;
             ddr.burstcnt <= 8'd1; // Initialize to 1 for non-burst operations
@@ -99,7 +110,6 @@ module memory_stream #(parameter COUNT = 32)
             case (state)
                 IDLE: begin
                     // Default signals
-                    ddr.acquire <= 0;
                     ddr.read <= 0;
                     ddr.write <= 0;
                     ddr.burstcnt <= 8'd1; // Always set to 1 for non-burst operations
@@ -117,11 +127,9 @@ module memory_stream #(parameter COUNT = 32)
                     if (read_start) begin
                         state <= READ_HEADER;
                         is_reading <= 1;
-                        ddr.acquire <= 1;
                     end else if (write_start) begin
                         state <= READ_HEADER;
                         is_reading <= 0;
-                        ddr.acquire <= 1;
                     end
                 end
 

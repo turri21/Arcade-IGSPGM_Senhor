@@ -979,6 +979,7 @@ jtframe_frac_cen #(2) arm_cen (
 wire [31:0] arm_dbg_pc /* verilator public_flat */;
 wire [31:0] arm_dbg_cpsr /* verilator public_flat */;
 wire [15:0] igs027a_latch_q, igs027a_share_q;
+wire        igs027a_ss_ready;
 
 // Shared-RAM halfword offset within the window: type1 64B @0x4f0000 (5-bit),
 // type2 64KB @0xd00000 (15-bit).  FIQ is set by the type2 latch write (0xd10000).
@@ -989,10 +990,27 @@ wire        arm_fiq_set  = (game == GAME_KOV2) & ~ARM_LATCHn & ~cpu_rw & ~(&cpu_
 // does not, and must not route its 0x08xxxxxx stub probes into the DDR cache.
 wire        arm_has_exrom = (game == GAME_KOV2);
 
-igs027a #(.TYPE(1)) igs027a(
+igs027a #(
+    .TYPE(1),
+    .SS_IDX(SSIDX_IGS027A),
+    .SS_IDX_IRAM(SSIDX_IGS027A_IRAM),
+    .SS_IDX_SHARE(SSIDX_IGS027A_SHARE),
+    .SS_IDX_XOR(SSIDX_IGS027A_XOR)
+) igs027a(
     .clk,
     .reset,
     .ce(ce_arm),
+
+    // savestate.  Freeze the ARM only once the system is actually paused
+    // (ss_pause & paused): requesting the freeze earlier would stop the ARM
+    // mid-protection-handshake and the 68k could never reach its pause point.
+    .ss_restore(ss_do_restore),
+    .ss_pause(ss_paused),
+    .ss_ready(igs027a_ss_ready),
+    .ssbus(ssb[SSIDX_IGS027A]),
+    .ssbus_iram(ssb[SSIDX_IGS027A_IRAM]),
+    .ssbus_share(ssb[SSIDX_IGS027A_SHARE]),
+    .ssbus_xor(ssb[SSIDX_IGS027A_XOR]),
 
     // 68k command/response latch (type1 0x500000 / type2 0xd10000)
     .m68k_latch_cs_n(ARM_LATCHn),

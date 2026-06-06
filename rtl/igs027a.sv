@@ -1,11 +1,24 @@
 import system_consts::*;
 
 module igs027a #(
-    parameter int TYPE = 1
+    parameter int TYPE = 1,
+    parameter int SS_IDX       = -1,
+    parameter int SS_IDX_IRAM  = -1,
+    parameter int SS_IDX_SHARE = -1,
+    parameter int SS_IDX_XOR   = -1
 )(
     input  logic        clk,
     input  logic        reset,        // active-high, synchronous (matches core)
     input  logic        ce,           // ARM advance enable (e.g. ce_16m)
+
+    // ---- savestate ----
+    input  logic        ss_restore,   // pulse: load defaults, then stream restores
+    input  logic        ss_pause,     // high for the whole save AND restore window
+    output logic        ss_ready,     // 1 when ARM is frozen at a safe point
+    ssbus_if.slave      ssbus,        // SSIDX_IGS027A:       ARM core + wrapper regs
+    ssbus_if.slave      ssbus_iram,   // SSIDX_IGS027A_IRAM:  internal RAM (via ram_cache)
+    ssbus_if.slave      ssbus_share,  // SSIDX_IGS027A_SHARE: 68k/ARM shared RAM
+    ssbus_if.slave      ssbus_xor,    // SSIDX_IGS027A_XOR:   exrom XOR table
 
     // ---- 68000 side: command/response latch ----
     // 0x500000/0x500002 (type1).  offset = byte_addr[1].
@@ -55,8 +68,34 @@ module igs027a #(
     wire        mem_ready;                 // assigned from the decode below
     logic [9:0] arm_steady_count;
     logic [9:0] arm_run_count;
-    wire        arm_en      = (arm_run_count != arm_steady_count);
+
+    // ---- savestate freeze handshake (gamebub ARM core io_saveReq/io_safe) ----
+    wire        save_window = ss_pause;        // high for whole save AND restore window
+    wire        io_saveReq  = save_window;
+    wire        arm_io_safe;
+    wire        arm_frozen  = arm_io_safe;     // core frozen at a pipeline boundary
+    assign      ss_ready    = ~save_window | arm_frozen;
+
+    // During the save window step the core on raw clk (ce_arm is dead while paused)
+    // until it reaches a safe point; otherwise use the normal catch-up enable.
+    wire        arm_en_normal    = (arm_run_count != arm_steady_count);
+    wire        arm_en_saveflush = save_window & ~arm_frozen;
+    wire        arm_en      = save_window ? arm_en_saveflush : arm_en_normal;
     wire        arm_advance = arm_en & mem_ready;
+
+    // ---- ssbus (core + wrapper) decode helpers ----
+    wire        ss_sel = (ssbus.select == SS_IDX[7:0]) & ~ssbus.query;
+    wire        ss_wr  = ss_sel & ssbus.write;       // restore (pre-frozen ack is gated below)
+    wire [7:0]  ss_a   = ssbus.addr[7:0];
+    wire        ss_wr_f = arm_frozen & ss_wr;        // gated restore write strobe
+    localparam int SS_COUNT = 'h48;                  // 0x00-0x3f core + 0x40-0x47 wrapper
+
+    // ARM core savestate port bridge (writes gated on frozen so the running core
+    // cannot un-restore its own registers mid-stream).
+    wire [31:0] arm_state_rdata;
+    wire [5:0]  arm_io_state_address = ssbus.addr[5:0];
+    wire [31:0] arm_io_state_wdata   = ssbus.data[31:0];
+    wire        arm_io_state_we      = ss_wr_f & (ssbus.addr < 32'h40);
 
     ARM7TDMI arm(
         .clock(clk),
@@ -87,7 +126,15 @@ module igs027a #(
         .io_mem_RDATA(arm_rdata),
 
         .io_FIQ(fiq_level),             // type2/3: set by 68k latch write
-        .io_IRQ(1'b0)
+        .io_IRQ(1'b0),
+
+        // ---- savestate ----
+        .io_state_address(arm_io_state_address),
+        .io_state_writeData(arm_io_state_wdata),
+        .io_state_writeEnable(arm_io_state_we),
+        .io_state_readData(arm_state_rdata),
+        .io_saveReq(io_saveReq),
+        .io_safe(arm_io_safe)
     );
     logic fiq_level /* verilator public_flat */;
     logic [15:0] fiq_set_count /* verilator public_flat */;
@@ -172,8 +219,9 @@ module igs027a #(
 
     wire [31:0] arm_rd_comb = arm_rd_mux;
     always_ff @(posedge clk) begin
-        if (reset)            arm_rdata <= 32'd0;
-        else if (arm_advance) arm_rdata <= arm_rd_comb;
+        if (reset || ss_restore)        arm_rdata <= 32'd0;
+        else if (ss_wr_f & (ss_a == 8'h40)) arm_rdata <= ssbus.data[31:0];
+        else if (arm_advance)           arm_rdata <= arm_rd_comb;
     end
 
     logic [31:0] arm_addr_q;
@@ -185,15 +233,30 @@ module igs027a #(
                         : (sel_xor | sel_share)? arm_addr_stable
                         :                        1'b1;
     assign mem_ready = base_mem_ready & ramc_wr_ready;
+    logic arm_frozen_q;
     always_ff @(posedge clk) begin
-        if (reset) begin
+        if (reset || ss_restore) begin
             arm_steady_count <= 10'd0;
             arm_run_count    <= 10'd0;
             arm_addr_q       <= 32'd0;
+            arm_frozen_q     <= 1'b0;
         end else begin
+            arm_frozen_q <= arm_frozen;
             arm_addr_q <= arm_addr;
             if (ce)          arm_steady_count <= arm_steady_count + 10'd1;
             if (arm_advance) arm_run_count    <= arm_run_count    + 10'd1;
+            // At the freeze edge, sync run to steady so resume after restore idles
+            // until the next ce tick (matches the normal catch-up cadence).
+            if (save_window & arm_frozen & ~arm_frozen_q)
+                arm_run_count <= arm_steady_count;
+            // SS restore (overrides normal; system is paused so no contention)
+            if (ss_wr_f) begin
+                case (ss_a)
+                    8'h41: {arm_run_count, arm_steady_count} <= {ssbus.data[19:10], ssbus.data[9:0]};
+                    8'h42: arm_addr_q <= ssbus.data[31:0];
+                    default: ;
+                endcase
+            end
         end
     end
 
@@ -232,37 +295,141 @@ module igs027a #(
     wire share_we = arm_advance & wr_pend & wsel_share;
 
     wire        ramc_rd_ready, ramc_wr_ready;
+
+    // ---- savestate access to iram, routed through the write-back cache so the
+    //      cache stays the coherence point (no separate flush/invalidate). The
+    //      ARM is frozen during the SS window, so SS owns the cache ports. ----
+    typedef enum logic [1:0] { SI_IDLE, SI_RD, SI_WR, SI_WAIT } si_t;
+    si_t         si_state;
+    logic        ss_iram_rd, ss_iram_wr;
+    logic [13:0] ss_iram_word;
+    wire         ss_iram_own  = arm_frozen;
+    wire [31:0]  ss_iram_addr = PROT_IRAM_DDR_BASE + {16'd0, ss_iram_word, 2'b00};
+
+    wire        ramc_rd_req  = ss_iram_own ? ss_iram_rd  : sel_iram;
+    wire [31:0] ramc_rd_addr = ss_iram_own ? ss_iram_addr
+                                           : (PROT_IRAM_DDR_BASE + {16'd0, arm_addr[15:0]});
+    wire        ramc_wr_req  = ss_iram_own ? ss_iram_wr  : (wr_pend & wsel_iram);
+    wire [31:0] ramc_wr_addr = ss_iram_own ? ss_iram_addr
+                                           : (PROT_IRAM_DDR_BASE + {16'd0, wr_addr[15:0]});
+    wire [31:0] ramc_wr_data = ss_iram_own ? ssbus_iram.data[31:0] : arm_wdata;
+    wire [3:0]  ramc_wr_be   = ss_iram_own ? 4'hf : wr_be;
+
     ram_cache #(.LINES(512), .DDR_BASE(PROT_IRAM_DDR_BASE)) iram_cache (
         .clk(clk), .reset(reset),
-        .rd_req(sel_iram),
-        .rd_addr(PROT_IRAM_DDR_BASE + {16'd0, arm_addr[15:0]}),
+        .rd_req(ramc_rd_req),
+        .rd_addr(ramc_rd_addr),
         .rd_data(q_iram), .rd_ready(ramc_rd_ready),
-        .wr_req(wr_pend & wsel_iram),
-        .wr_addr(PROT_IRAM_DDR_BASE + {16'd0, wr_addr[15:0]}),
-        .wr_data(arm_wdata), .wr_be(wr_be), .wr_ready(ramc_wr_ready),
+        .wr_req(ramc_wr_req),
+        .wr_addr(ramc_wr_addr),
+        .wr_data(ramc_wr_data), .wr_be(ramc_wr_be), .wr_ready(ramc_wr_ready),
         .ddr(ddr_iram)
     );
 
-    // xortab: port A = ARM write, port B = read (serves ARM read and exrom XOR)
+    always_ff @(posedge clk) begin
+        ssbus_iram.setup(SS_IDX_IRAM, 32'd16384, 2);
+        if (reset) begin
+            si_state   <= SI_IDLE;
+            ss_iram_rd <= 1'b0;
+            ss_iram_wr <= 1'b0;
+        end else begin
+            case (si_state)
+                SI_IDLE: begin
+                    ss_iram_rd <= 1'b0;
+                    ss_iram_wr <= 1'b0;
+                    if (arm_frozen && ssbus_iram.access(SS_IDX_IRAM)) begin
+                        ss_iram_word <= ssbus_iram.addr[13:0];
+                        if (ssbus_iram.write)      begin ss_iram_wr <= 1'b1; si_state <= SI_WR; end
+                        else if (ssbus_iram.read)  begin ss_iram_rd <= 1'b1; si_state <= SI_RD; end
+                    end
+                end
+                SI_RD: if (ramc_rd_ready) begin
+                    ss_iram_rd <= 1'b0;
+                    ssbus_iram.read_response(SS_IDX_IRAM, {32'd0, q_iram});
+                    si_state <= SI_WAIT;
+                end
+                SI_WR: if (ramc_wr_ready) begin
+                    ss_iram_wr <= 1'b0;
+                    ssbus_iram.write_ack(SS_IDX_IRAM);
+                    si_state <= SI_WAIT;
+                end
+                SI_WAIT: if (~(ssbus_iram.read | ssbus_iram.write)) si_state <= SI_IDLE;
+                default: si_state <= SI_IDLE;
+            endcase
+        end
+    end
+
+    // xortab: port A = ARM write, port B = read (serves ARM read and exrom XOR).
+    // SS borrows port A (writes) and port B (reads) while the ARM is frozen.
+    wire        ss_xor_sel = arm_frozen & (ssbus_xor.select == SS_IDX_XOR[7:0])
+                            & ~ssbus_xor.query & (ssbus_xor.read | ssbus_xor.write);
+    wire        ss_xor_wr  = ss_xor_sel & ssbus_xor.write;
+    wire        xr_wren_a  = ss_xor_sel ? ss_xor_wr            : xor_we;
+    wire [3:0]  xr_be_a    = ss_xor_sel ? 4'hf                 : wr_be;
+    wire [7:0]  xr_addr_a  = ss_xor_sel ? ssbus_xor.addr[7:0]  : wxor_idx;
+    wire [31:0] xr_data_a  = ss_xor_sel ? ssbus_xor.data[31:0] : arm_wdata;
+    wire [7:0]  xr_addr_b  = ss_xor_sel ? ssbus_xor.addr[7:0]  : arm_addr[9:2];
+
     dualport_ram_be #(.BYTES(4), .WIDTHAD(8)) xortab (
-        .clock_a(clk), .wren_a(xor_we), .byteena_a(wr_be), .address_a(wxor_idx),     .data_a(arm_wdata), .q_a(),
-        .clock_b(clk), .wren_b(1'b0),   .byteena_b(4'b0),  .address_b(arm_addr[9:2]), .data_b(32'd0),     .q_b(q_xor)
+        .clock_a(clk), .wren_a(xr_wren_a), .byteena_a(xr_be_a), .address_a(xr_addr_a), .data_a(xr_data_a), .q_a(),
+        .clock_b(clk), .wren_b(1'b0),      .byteena_b(4'b0),    .address_b(xr_addr_b), .data_b(32'd0),     .q_b(q_xor)
     );
 
-    // share: port A = 68k (16-bit half by m68k_shi), port B = ARM (read, or write commit)
+    typedef enum logic [1:0] { SX_IDLE, SX_RD, SX_WAIT } sx_t;
+    sx_t sx_state;
+    always_ff @(posedge clk) begin
+        ssbus_xor.setup(SS_IDX_XOR, 32'd256, 2);
+        if (reset) sx_state <= SX_IDLE;
+        else case (sx_state)
+            SX_IDLE: if (ss_xor_sel) begin
+                if (ssbus_xor.write) begin ssbus_xor.write_ack(SS_IDX_XOR); sx_state <= SX_WAIT; end
+                else                 sx_state <= SX_RD;
+            end
+            SX_RD:   begin ssbus_xor.read_response(SS_IDX_XOR, {32'd0, q_xor}); sx_state <= SX_WAIT; end
+            SX_WAIT: if (~(ssbus_xor.read | ssbus_xor.write)) sx_state <= SX_IDLE;
+            default: sx_state <= SX_IDLE;
+        endcase
+    end
+
+    // share: port A = 68k (16-bit half by m68k_shi), port B = ARM (read, or write commit).
+    // SS borrows port B while the ARM is frozen.
     wire        m68k_share_we = ~m68k_share_cs_n & (m68k_share_we_u | m68k_share_we_l);
     wire [3:0]  m68k_share_be = m68k_shi ? {m68k_share_we_u, m68k_share_we_l, 2'b00}
                                          : {2'b00, m68k_share_we_u, m68k_share_we_l};
+    wire        ss_share_sel = arm_frozen & (ssbus_share.select == SS_IDX_SHARE[7:0])
+                              & ~ssbus_share.query & (ssbus_share.read | ssbus_share.write);
+    wire        ss_share_wr  = ss_share_sel & ssbus_share.write;
+    wire        sh_wren_b    = ss_share_sel ? ss_share_wr            : share_we;
+    wire [3:0]  sh_be_b      = ss_share_sel ? 4'hf                   : wr_be;
+    wire [13:0] sh_addr_b    = ss_share_sel ? ssbus_share.addr[13:0] : (share_we ? wshare_idx : share_idx);
+    wire [31:0] sh_data_b    = ss_share_sel ? ssbus_share.data[31:0] : arm_wdata;
     dualport_ram_be #(.BYTES(4), .WIDTHAD(14)) share (
         .clock_a(clk), .wren_a(m68k_share_we), .byteena_a(m68k_share_be),
         .address_a(m68k_sw), .data_a({m68k_share_din, m68k_share_din}), .q_a(q_share_68k),
-        .clock_b(clk), .wren_b(share_we), .byteena_b(wr_be),
-        .address_b(share_we ? wshare_idx : share_idx), .data_b(arm_wdata), .q_b(q_share)
+        .clock_b(clk), .wren_b(sh_wren_b), .byteena_b(sh_be_b),
+        .address_b(sh_addr_b), .data_b(sh_data_b), .q_b(q_share)
     );
+
+    typedef enum logic [1:0] { SH_IDLE, SH_RD, SH_WAIT } sh_t;
+    sh_t sh_state;
+    always_ff @(posedge clk) begin
+        ssbus_share.setup(SS_IDX_SHARE, 32'd16384, 2);
+        if (reset) sh_state <= SH_IDLE;
+        else case (sh_state)
+            SH_IDLE: if (ss_share_sel) begin
+                if (ssbus_share.write) begin ssbus_share.write_ack(SS_IDX_SHARE); sh_state <= SH_WAIT; end
+                else                   sh_state <= SH_RD;
+            end
+            SH_RD:   begin ssbus_share.read_response(SS_IDX_SHARE, {32'd0, q_share}); sh_state <= SH_WAIT; end
+            SH_WAIT: if (~(ssbus_share.read | ssbus_share.write)) sh_state <= SH_IDLE;
+            default: sh_state <= SH_IDLE;
+        endcase
+    end
 
     integer i;
     always_ff @(posedge clk) begin
-        if (reset) begin
+        ssbus.setup(SS_IDX, SS_COUNT, 2);
+        if (reset || ss_restore) begin
             latch_arm_w <= 32'd0;
             latch_68k_w <= 32'd0;
             counter     <= 32'd1;       // MAME inits counter to 1
@@ -301,6 +468,37 @@ module igs027a #(
                     latch_68k_w[31:16] <= m68k_latch_din;
                 else
                     latch_68k_w[15:0]  <= m68k_latch_din;
+            end
+
+            // ---- savestate: ARM core (0x00-0x3f) + wrapper regs (0x40-0x47).
+            //      Gated on arm_frozen so save reads / restore writes only happen
+            //      once the core is at a safe point and cannot self-mutate.  The
+            //      core words are bridged combinationally via io_state_* (read) and
+            //      arm_io_state_we (write); wrapper regs are (de)serialised here. ----
+            if (arm_frozen && ssbus.access(SS_IDX)) begin
+                if (ssbus.write) begin
+                    case (ssbus.addr)
+                        32'h43: latch_arm_w <= ssbus.data[31:0];
+                        32'h44: latch_68k_w <= ssbus.data[31:0];
+                        32'h45: counter     <= ssbus.data[31:0];
+                        32'h46: begin fiq_level <= ssbus.data[5]; wr_pend <= ssbus.data[4]; wr_be <= ssbus.data[3:0]; end
+                        32'h47: wr_addr     <= ssbus.data[31:0];
+                        default: ;   // 0x00-0x3f core (io_state_*); 0x40-0x42 in other blocks
+                    endcase
+                    ssbus.write_ack(SS_IDX);
+                end else if (ssbus.read) begin
+                    case (ssbus.addr)
+                        32'h40: ssbus.read_response(SS_IDX, {32'd0, arm_rdata});
+                        32'h41: ssbus.read_response(SS_IDX, {32'd0, 12'd0, arm_run_count, arm_steady_count});
+                        32'h42: ssbus.read_response(SS_IDX, {32'd0, arm_addr_q});
+                        32'h43: ssbus.read_response(SS_IDX, {32'd0, latch_arm_w});
+                        32'h44: ssbus.read_response(SS_IDX, {32'd0, latch_68k_w});
+                        32'h45: ssbus.read_response(SS_IDX, {32'd0, counter});
+                        32'h46: ssbus.read_response(SS_IDX, {58'd0, fiq_level, wr_pend, wr_be});
+                        32'h47: ssbus.read_response(SS_IDX, {32'd0, wr_addr});
+                        default: ssbus.read_response(SS_IDX, {32'd0, arm_state_rdata}); // 0x00-0x3f
+                    endcase
+                end
             end
         end
     end

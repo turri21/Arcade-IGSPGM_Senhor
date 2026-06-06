@@ -38,12 +38,12 @@ rtl/igs025.sv
 rtl/igs022.sv
 
 // ARM7TDMI + IGS027A
-rtl/ARM7TDMI/Alu.sv
-rtl/ARM7TDMI/Shifter.sv
-rtl/ARM7TDMI/Multiplier.sv
-rtl/ARM7TDMI/Decoder.sv
-rtl/ARM7TDMI/Control.sv
-rtl/ARM7TDMI/ARM7TDMI.sv
+rtl/gamebub-arm/generated/Alu.sv
+rtl/gamebub-arm/generated/Shifter.sv
+rtl/gamebub-arm/generated/Multiplier.sv
+rtl/gamebub-arm/generated/Decoder.sv
+rtl/gamebub-arm/generated/Control.sv
+rtl/gamebub-arm/generated/ARM7TDMI.sv
 rtl/arm_rom_cache.sv
 rtl/prot_cache.sv
 rtl/ram_cache.sv

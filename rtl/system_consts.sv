@@ -13,6 +13,10 @@ package system_consts;
     parameter int SSIDX_IGS022 = 11;          // engine regs[]/stack[]/stack_ptr
     parameter int SSIDX_IGS022_RAM_LO = 12;   // shared protection RAM, low bytes
     parameter int SSIDX_IGS022_RAM_HI = 13;   // shared protection RAM, high bytes
+    parameter int SSIDX_IGS027A       = 14;   // ARM7 core (64 words) + igs027a wrapper regs
+    parameter int SSIDX_IGS027A_IRAM  = 15;   // internal RAM (64KB) via ram_cache rd/wr ports
+    parameter int SSIDX_IGS027A_SHARE = 16;   // 68k/ARM shared RAM (64KB)
+    parameter int SSIDX_IGS027A_XOR   = 17;   // exrom XOR table (1KB)
 
     parameter bit [31:0] SS_DDR_BASE         = 32'h3E00_0000;
     parameter bit [31:0] CART_A_ROM_DDR_BASE = 32'h3800_0000;
