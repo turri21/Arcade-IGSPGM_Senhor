@@ -82,6 +82,7 @@ reg [11:0] spr_scaled_width;
 reg [8:0] spr_height;
 reg spr_y_zoom;
 reg spr_x_zoom;
+reg [4:0] spr_scale_x, spr_scale_y;
 reg [31:0] spr_x_scale_bits;
 reg [31:0] spr_y_scale_bits;
 
@@ -277,6 +278,7 @@ arom_offset_t pixel0_offset, pixel1_offset;
 wire buffer_ready;
 reg draw_complete;
 reg [15:0] initial_addr_low;
+reg [22:0] tmp_brom_addr;
 
 // tmp_* are temporary
 // spr_* are immutable per sprite values
@@ -285,8 +287,6 @@ always_ff @(posedge clk) begin
     reg [5:0] tmp_x;
     reg [15:0] tmp_shifter;
     reg [3:0] tmp_shift_count;
-    reg [22:0] tmp_brom_addr;
-    reg tmp_y_flip;
     reg [31:0] tmp_addr32;
 
 
@@ -306,42 +306,41 @@ always_ff @(posedge clk) begin
         end
 
         if (spr_load) begin
-            reg [5:0] tmp_width;
-            reg [8:0] tmp_height;
-            reg [4:0] tmp_scale_x, tmp_scale_y;
             spr_x <= sprite_d0[sprite_index][10:0];
             spr_x_zoom <= sprite_d0[sprite_index][15];
             spr_y <= sprite_d1[sprite_index][9:0];
             spr_y_zoom <= sprite_d1[sprite_index][15];
-            tmp_y_flip = sprite_d2[sprite_index][14];
-            tmp_height = sprite_d4[sprite_index][8:0];
-            tmp_width = sprite_d4[sprite_index][14:9];
-            tmp_brom_addr = { sprite_d2[sprite_index][6:0], sprite_d3[sprite_index] };
-            if (tmp_y_flip) begin
-                spr_brom_base_addr <= tmp_brom_addr + 32'd3 + ({17'b0, tmp_width} * {14'b0, tmp_height});
-            end else begin
-                spr_brom_base_addr <= tmp_brom_addr;
-            end
+            tmp_brom_addr <= { sprite_d2[sprite_index][6:0], sprite_d3[sprite_index] };
             spr_prio <= sprite_d2[sprite_index][7];
             spr_palette <= sprite_d2[sprite_index][12:8];
+            
             spr_x_flip <= sprite_d2[sprite_index][13];
-            spr_y_flip <= tmp_y_flip;
-            spr_height <= tmp_height;
-            spr_width <= tmp_width;
+            spr_y_flip <= sprite_d2[sprite_index][14];
+            
+            spr_height <= sprite_d4[sprite_index][8:0];
+            spr_width <= sprite_d4[sprite_index][14:9];
 
-            tmp_scale_x = sprite_d0[sprite_index][15:11];
-            tmp_scale_y = sprite_d1[sprite_index][15:11];
-            spr_scaled_width <= scaled_width(tmp_scale_x, tmp_width);
+            spr_scale_x <= sprite_d0[sprite_index][15:11];
+            spr_scale_y <= sprite_d1[sprite_index][15:11];
 
             spr <= sprite_state[sprite_index];
-            spr_saved <= sprite_state[sprite_index];
-           
-            spr_x_scale_bits <= scale_pattern[tmp_scale_x];
-            spr_y_scale_bits <= scale_pattern[tmp_scale_y];
+            spr_saved <= sprite_state[sprite_index];           
         end else if (spr_store) begin
             sprite_state[sprite_index] <= spr;
         end
-                
+
+        begin
+            // this stuff happens the next cycle after spr_load
+            if (spr_y_flip) begin
+                spr_brom_base_addr <= tmp_brom_addr + 32'd3 + ({17'b0, spr_width} * {14'b0, spr_height});
+            end else begin
+                spr_brom_base_addr <= tmp_brom_addr;
+            end
+            spr_scaled_width <= scaled_width(spr_scale_x, spr_width);
+            spr_x_scale_bits <= scale_pattern[spr_scale_x];
+            spr_y_scale_bits <= scale_pattern[spr_scale_y];
+        end
+
         case(dma_state)
             DMA_IDLE: begin
                 draw_complete <= 1;
