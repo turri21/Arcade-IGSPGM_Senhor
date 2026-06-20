@@ -204,6 +204,15 @@ class SpriteDebugWindow : public Window
         const double hitPct = cacheTotal ? (100.0 * cacheHits / static_cast<double>(cacheTotal)) : 0.0;
         ImGui::Text("DDR cache (last frame): hits=%u  misses=%u  hit=%.1f%%", cacheHits, cacheMisses, hitPct);
 
+        // Throughput health: did the draw reach all 224 lines, and how long was the
+        // line-buffer consumer blocked by the writable-line window (death-spiral sign)?
+        const uint32_t drawLines = root->sim_top__DOT__pgm_inst__DOT__igs023__DOT__sprite__DOT__frame_draw_lines;
+        const uint32_t winStall = root->sim_top__DOT__pgm_inst__DOT__igs023__DOT__sprite__DOT__line_buffer__DOT__buffer_window_stall_frame;
+        const bool drewAll = drawLines >= 224;
+        ImGui::TextColored(drewAll ? ImVec4(0, 1, 0, 1) : ImVec4(1, 0.4f, 0.2f, 1),
+                           "Draw reached %u/224 lines%s   window-stall cycles: %u", drawLines,
+                           drewAll ? " (complete)" : " (RAN OUT OF TIME)", winStall);
+
         ImGui::Checkbox("Show all 256 rows", &mShowAllRows);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(kMinInputWidth);

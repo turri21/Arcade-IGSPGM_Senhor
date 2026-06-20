@@ -178,13 +178,20 @@ end
 endfunction
 
 
-wire [22:0] brom_word_address = brom_address_for_offset(spr.brom_offset);
+reg brom_pf_active = 0;
+wire [15:0] brom_fetch_offset = brom_pf_active ? (spr.brom_offset + 16'd1) : spr.brom_offset;
+wire [22:0] brom_word_address = brom_address_for_offset(brom_fetch_offset);
 wire [22:0] brom_aligned_word_address = { brom_word_address[22:2], 2'b00 };
 assign brom_address = { brom_aligned_word_address, 1'b0 };
 
 logic [15:0] spr_brom_data;
 always_comb begin
     spr_brom_data = brom_extract(spr.brom_cache, spr.brom_offset);
+end
+
+logic [15:0] spr_brom_data_next;
+always_comb begin
+    spr_brom_data_next = brom_extract(spr.brom_cache, spr.brom_offset + 16'd1);
 end
 
 wire spr_load = dma_state == PRESCAN_LOAD || dma_state == DRAW_SEARCH_ACTIVE_LOAD;
@@ -208,6 +215,20 @@ begin
                  + count_zeros4(v[11:8])
                  + count_zeros4(v[7:4])
                  + count_zeros4(v[3:0]);
+end
+endfunction
+
+// Number of consecutive transparent (set) bits starting at bit 0.  
+function automatic [4:0] count_trailing_ones16(input [15:0] v);
+    integer k;
+    bit done;
+begin
+    count_trailing_ones16 = 0;
+    done = 0;
+    for (k = 0; k < 16; k = k + 1) begin
+        if (!done && v[k]) count_trailing_ones16 = count_trailing_ones16 + 5'd1;
+        else done = 1;
+    end
 end
 endfunction
 
@@ -346,6 +367,7 @@ always_ff @(posedge clk) begin
         cpu_bgack_n <= 1;
         dma_state <= DMA_IDLE;
         draw_complete <= 1;
+        brom_pf_active <= 0;
     end else begin
         pixel0_wr <= 0;
         pixel1_wr <= 0;
@@ -630,6 +652,11 @@ always_ff @(posedge clk) begin
             end
 
             DRAW_SPAN: begin
+                if (tmp_shift_count == 4'd0 && brom_is_last_in_cache(spr.brom_offset) && !brom_pf_active) begin
+                    brom_req <= ~brom_req;
+                    brom_pf_active <= 1;
+                end
+
                 if (buffer_ready) begin
                     reg [1:0] input_count;
                     reg [1:0] output_count;
@@ -645,6 +672,9 @@ always_ff @(posedge clk) begin
                     reg       skip1;
                     reg       process_second;
                     arom_offset_t src_offset;
+                    reg [4:0] skip_run;
+                    reg [4:0] out_adv;
+                    reg [3:0] scaled_pc;
 
                     pixel_prio <= spr_prio;
                     pixel_palette <= spr_palette;
@@ -653,98 +683,146 @@ always_ff @(posedge clk) begin
                     pixel0_offset <= spr.arom_offset;
                     pixel1_offset <= spr.arom_offset;
 
-                    input_count = 0;
-                    output_count = 0;
-                    arom_count = 0;
-                    bit0_transparent = tmp_shifter[0];
-                    bit1_transparent = tmp_shifter[1];
-                    repeat0 = spr_x_zoom & spr_x_scale_bits[0];
-                    repeat1 = spr_x_zoom & spr_x_scale_bits[1];
-                    skip0 = ~spr_x_zoom & spr_x_scale_bits[0];
-                    skip1 = ~spr_x_zoom & spr_x_scale_bits[1];
-                    has_second = (tmp_shift_count != 4'd15);
-                    process_second = 0;
-
-                    input_count = 1;
-                    if (~bit0_transparent) begin
-                        src_offset = inc_offset(spr.arom_offset, { 3'd0, arom_count });
-                    end
-                    if (spr_x_zoom) begin
-                        pos_count = repeat0 ? 3'd2 : 3'd1;
-                    end else begin
-                        pos_count = skip0 ? 3'd0 : 3'd1;
-                    end
-                    if (pos_count != 0) begin
-                        if (~bit0_transparent) begin
-                            pixel0_offset <= src_offset;
-                            pixel0_wr <= 1;
-                            if (pos_count == 3'd2) begin
-                                pixel1_offset <= src_offset;
-                                pixel1_wr <= 1;
+                    if (tmp_shifter[0] && tmp_shifter[1]) begin
+                        skip_run = count_trailing_ones16(tmp_shifter);
+                        if (spr_scale_x == 5'h10) begin
+                            out_adv = skip_run;                         // 1:1, scale bits are 0
+                        end else begin
+                            if (skip_run > 5'd8) skip_run = 5'd8;       // cap scaled skip
+                            scaled_pc = { 3'd0, spr_x_scale_bits[0] } + { 3'd0, spr_x_scale_bits[1] }
+                                    + ((skip_run > 5'd2) ? { 3'd0, spr_x_scale_bits[2] } : 4'd0)
+                                    + ((skip_run > 5'd3) ? { 3'd0, spr_x_scale_bits[3] } : 4'd0)
+                                    + ((skip_run > 5'd4) ? { 3'd0, spr_x_scale_bits[4] } : 4'd0)
+                                    + ((skip_run > 5'd5) ? { 3'd0, spr_x_scale_bits[5] } : 4'd0)
+                                    + ((skip_run > 5'd6) ? { 3'd0, spr_x_scale_bits[6] } : 4'd0)
+                                    + ((skip_run > 5'd7) ? { 3'd0, spr_x_scale_bits[7] } : 4'd0);
+                            out_adv = spr_x_zoom ? (skip_run + { 1'd0, scaled_pc })
+                                                : (skip_run - { 1'd0, scaled_pc });
+                            case (skip_run)
+                                5'd2: spr_x_scale_bits <= { spr_x_scale_bits[1:0], spr_x_scale_bits[31:2] };
+                                5'd3: spr_x_scale_bits <= { spr_x_scale_bits[2:0], spr_x_scale_bits[31:3] };
+                                5'd4: spr_x_scale_bits <= { spr_x_scale_bits[3:0], spr_x_scale_bits[31:4] };
+                                5'd5: spr_x_scale_bits <= { spr_x_scale_bits[4:0], spr_x_scale_bits[31:5] };
+                                5'd6: spr_x_scale_bits <= { spr_x_scale_bits[5:0], spr_x_scale_bits[31:6] };
+                                5'd7: spr_x_scale_bits <= { spr_x_scale_bits[6:0], spr_x_scale_bits[31:7] };
+                                5'd8: spr_x_scale_bits <= { spr_x_scale_bits[7:0], spr_x_scale_bits[31:8] };
+                                default: begin end
+                            endcase
+                        end
+                        pixel_next <= pixel_next + { 6'd0, out_adv };
+                        tmp_shifter <= tmp_shifter >> skip_run;
+                        next_shift_count = { 1'b0, tmp_shift_count } + skip_run;
+                        tmp_shift_count <= next_shift_count[3:0];
+                        if (next_shift_count >= 5'd16) begin
+                            spr.brom_offset <= spr.brom_offset + 1;
+                            tmp_x <= tmp_x + 1;
+                            if (brom_is_last_in_cache(spr.brom_offset)) begin
+                                dma_state <= DRAW_BROM_WAIT;
+                            end else if ((tmp_x + 6'd1) == spr_width) begin
+                                dma_state <= DRAW_ROW;
+                            end else begin
+                                tmp_shifter <= spr_y_flip ? reverse_bits16(spr_brom_data_next) : spr_brom_data_next;
+                                tmp_shift_count <= 0;
                             end
                         end
-                        output_count = pos_count[1:0];
-                    end
-                    if (~bit0_transparent) begin
-                        arom_count = arom_count + 1'b1;
-                    end
+                    end else begin
+                        input_count = 0;
+                        output_count = 0;
+                        arom_count = 0;
+                        bit0_transparent = tmp_shifter[0];
+                        bit1_transparent = tmp_shifter[1];
+                        repeat0 = spr_x_zoom & spr_x_scale_bits[0];
+                        repeat1 = spr_x_zoom & spr_x_scale_bits[1];
+                        skip0 = ~spr_x_zoom & spr_x_scale_bits[0];
+                        skip1 = ~spr_x_zoom & spr_x_scale_bits[1];
+                        has_second = (tmp_shift_count != 4'd15);
+                        process_second = 0;
 
-                    if (has_second) begin
-                        if (spr_x_zoom) begin
-                            process_second = ~repeat0 & ~repeat1;
-                        end else begin
-                            process_second = 1;
-                        end
-                    end
-
-                    if (process_second) begin
-                        input_count = input_count + 1'b1;
-                        if (~bit1_transparent) begin
+                        input_count = 1;
+                        if (~bit0_transparent) begin
                             src_offset = inc_offset(spr.arom_offset, { 3'd0, arom_count });
                         end
-                        pos_count = skip1 ? 3'd0 : 3'd1;
+                        if (spr_x_zoom) begin
+                            pos_count = repeat0 ? 3'd2 : 3'd1;
+                        end else begin
+                            pos_count = skip0 ? 3'd0 : 3'd1;
+                        end
                         if (pos_count != 0) begin
-                            if (~bit1_transparent) begin
-                                if (output_count == 0) begin
-                                    pixel0_offset <= src_offset;
-                                    pixel0_wr <= 1;
-                                end else begin
+                            if (~bit0_transparent) begin
+                                pixel0_offset <= src_offset;
+                                pixel0_wr <= 1;
+                                if (pos_count == 3'd2) begin
                                     pixel1_offset <= src_offset;
                                     pixel1_wr <= 1;
                                 end
                             end
-                            output_count = output_count + pos_count[1:0];
+                            output_count = pos_count[1:0];
                         end
-                        if (~bit1_transparent) begin
+                        if (~bit0_transparent) begin
                             arom_count = arom_count + 1'b1;
                         end
-                    end
 
-                    spr.arom_offset <= inc_offset(spr.arom_offset, { 3'd0, arom_count });
-                    pixel_next <= pixel_next + { 9'd0, output_count };
-
-                    case(input_count)
-                        2'd1: begin
-                            tmp_shifter <= { 1'b0, tmp_shifter[15:1] };
-                            spr_x_scale_bits <= { spr_x_scale_bits[0], spr_x_scale_bits[31:1] };
+                        if (has_second) begin
+                            if (spr_x_zoom) begin
+                                process_second = ~repeat0 & ~repeat1;
+                            end else begin
+                                process_second = 1;
+                            end
                         end
-                        2'd2: begin
-                            tmp_shifter <= { 2'b0, tmp_shifter[15:2] };
-                            spr_x_scale_bits <= { spr_x_scale_bits[1:0], spr_x_scale_bits[31:2] };
-                        end
-                        default: begin end
-                    endcase
 
-                    next_shift_count = { 1'b0, tmp_shift_count } + { 3'd0, input_count };
-                    tmp_shift_count <= next_shift_count[3:0];
-                    if (next_shift_count >= 5'd16) begin
-                        spr.brom_offset <= spr.brom_offset + 1;
-                        tmp_x <= tmp_x + 1;
-                        if (brom_is_last_in_cache(spr.brom_offset)) begin
-                            brom_req <= ~brom_req;
-                            dma_state <= DRAW_BROM_WAIT;
-                        end else begin
-                            dma_state <= DRAW_ROW;
+                        if (process_second) begin
+                            input_count = input_count + 1'b1;
+                            if (~bit1_transparent) begin
+                                src_offset = inc_offset(spr.arom_offset, { 3'd0, arom_count });
+                            end
+                            pos_count = skip1 ? 3'd0 : 3'd1;
+                            if (pos_count != 0) begin
+                                if (~bit1_transparent) begin
+                                    if (output_count == 0) begin
+                                        pixel0_offset <= src_offset;
+                                        pixel0_wr <= 1;
+                                    end else begin
+                                        pixel1_offset <= src_offset;
+                                        pixel1_wr <= 1;
+                                    end
+                                end
+                                output_count = output_count + pos_count[1:0];
+                            end
+                            if (~bit1_transparent) begin
+                                arom_count = arom_count + 1'b1;
+                            end
+                        end
+
+                        spr.arom_offset <= inc_offset(spr.arom_offset, { 3'd0, arom_count });
+                        pixel_next <= pixel_next + { 9'd0, output_count };
+
+                        case(input_count)
+                            2'd1: begin
+                                tmp_shifter <= { 1'b0, tmp_shifter[15:1] };
+                                spr_x_scale_bits <= { spr_x_scale_bits[0], spr_x_scale_bits[31:1] };
+                            end
+                            2'd2: begin
+                                tmp_shifter <= { 2'b0, tmp_shifter[15:2] };
+                                spr_x_scale_bits <= { spr_x_scale_bits[1:0], spr_x_scale_bits[31:2] };
+                            end
+                            default: begin end
+                        endcase
+
+                        next_shift_count = { 1'b0, tmp_shift_count } + { 3'd0, input_count };
+                        tmp_shift_count <= next_shift_count[3:0];
+                        if (next_shift_count >= 5'd16) begin
+                            spr.brom_offset <= spr.brom_offset + 1;
+                            tmp_x <= tmp_x + 1;
+                            if (brom_is_last_in_cache(spr.brom_offset)) begin
+                                // wait for prefetch
+                                dma_state <= DRAW_BROM_WAIT;
+                            end else if ((tmp_x + 6'd1) == spr_width) begin
+                                // last word of the row: DRAW_ROW does the row-end bookkeeping
+                                dma_state <= DRAW_ROW;
+                            end else begin
+                                tmp_shifter <= spr_y_flip ? reverse_bits16(spr_brom_data_next) : spr_brom_data_next;
+                                tmp_shift_count <= 0;
+                            end
                         end
                     end
                 end
@@ -753,6 +831,7 @@ always_ff @(posedge clk) begin
             DRAW_BROM_WAIT: begin
                 if (brom_req == brom_ack) begin
                     spr.brom_cache <= brom_data;
+                    brom_pf_active <= 0;
                     dma_state <= DRAW_ROW;
                 end
             end
