@@ -88,22 +88,20 @@ end
 endfunction
 
 // ugh, this is super complicated
-function automatic [11:0] scaled_height(input [4:0] scale, input [8:0] height);
-    bit [31:0] pat;
+function automatic [9:0] scaled_height(input [4:0] scale, input [31:0] pat, input [8:0] height);
     bit [4:0]  pper;      // set bits per full 32-line period = |scale-16|
     bit [3:0]  full;      // full 32-line periods
     bit [4:0]  rem;       // remaining source lines
     bit [5:0]  prem;      // set bits among the first `rem` lines
-    bit [11:0] settotal;
+    bit [9:0] settotal;
 begin
-    pat  = scale_pattern[scale];
     pper = scale[4] ? (scale - 5'd16) : (5'd16 - scale);
     full = height[8:5];
     rem  = height[4:0];
     prem = popcount32(pat & ((32'd1 << rem) - 32'd1));
-    settotal = ({ 8'd0, full } * { 7'd0, pper }) + { 6'd0, prem };
-    scaled_height = scale[4] ? ({ 3'd0, height } + settotal)
-                             : ({ 3'd0, height } - settotal + 12'd1);
+    settotal = ({ 6'd0, full } * { 5'd0, pper }) + { 4'd0, prem };
+    scaled_height = scale[4] ? ({ 1'd0, height } + settotal)
+                             : ({ 1'd0, height } - settotal + 10'd1);
 end
 endfunction
 
@@ -151,9 +149,6 @@ typedef struct
 
 volatile_sprite_state_t sprite_state[256];
 volatile_sprite_state_t spr, spr_saved;
-
-wire [9:0] spr_y_dest = global_flip_y ? (10'd224 - spr_y - scaled_height(spr_scale_y, spr_height)[9:0])
-                                      : spr_y;
 
 function automatic [22:0] brom_address_for_offset(input [15:0] offset);
 begin
@@ -461,8 +456,8 @@ always_ff @(posedge clk) begin
                 spr.brom_offset <= 0;
                 brom_req <= ~brom_req;
                 tmp_x <= 0;
-                spr.screen_line <= spr_y_dest;
-                spr.source_line <= 0;
+                spr.screen_line <= global_flip_y ? (10'd224 - spr_y - scaled_height(spr_scale_y, scale_pattern[spr_scale_y], spr_height))
+                                                 : spr_y;
                 dma_state <= PRESCAN_INITIAL_BROM_WAIT;
             end
 
