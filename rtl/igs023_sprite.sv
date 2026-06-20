@@ -818,6 +818,7 @@ IGS023_Buffer line_buffer(
     .arom_offset0(spr_x_flip ^ spr_y_flip ? pixel1_offset : pixel0_offset),
     .arom_offset1(spr_x_flip ^ spr_y_flip ? pixel0_offset : pixel1_offset),
     .line(draw_line),
+    .sprite_index(sprite_index[7:0]),
     .ready(buffer_ready),
 
     .arom_address(arom_address),

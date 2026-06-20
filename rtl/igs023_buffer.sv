@@ -31,6 +31,7 @@ module IGS023_Buffer(
     input       wr0,
     input       wr1,
     output      ready,
+    input [7:0] sprite_index,
     input [10:0] column,
     input [7:0] line,
     input [4:0] palette,
@@ -69,6 +70,7 @@ typedef struct packed
     logic [4:0]     palette;
     logic [8:0]     column;
     logic [7:0]     line;
+    logic [7:0]     sprite_index;
 } write_entry_t;
 
 write_entry_t wq_in;
@@ -83,6 +85,7 @@ assign wq_in.prio = prio;
 assign wq_in.column = column[8:0];
 assign wq_in.line = line;
 assign wq_in.wr = {wr1, wr0};
+assign wq_in.sprite_index = sprite_index;
 assign wq_cur = wq_fifo0;
 
 wire valid_wr = (wr0 | wr1) && (column < 448 || &column);
@@ -142,8 +145,8 @@ queue_state_t queue_state = IDLE;
 wire queue_valid = |write_queue_fifo_count;
 
 reg        ddr_cache_valid = 0;
-reg [19:0] ddr_cache_addr[4];
-reg [63:0] ddr_cache_data[4];
+reg [19:0] ddr_cache_addr[256 * 4];
+reg [63:0] ddr_cache_data[256 * 4];
 
 function automatic [1:0] ddr_cache_slot(input arom_offset_t ofs);
 begin
@@ -151,9 +154,9 @@ begin
 end
 endfunction
 
-function automatic ddr_cache_hit(input arom_offset_t ofs);
+function automatic ddr_cache_hit(input [7:0] sprite_index, input arom_offset_t ofs);
 begin
-    ddr_cache_hit = ddr_cache_valid && (ddr_cache_addr[ddr_cache_slot(ofs)] == ofs.words[23:4]);
+    ddr_cache_hit = ddr_cache_valid && (ddr_cache_addr[{sprite_index, ddr_cache_slot(ofs)}] == ofs.words[23:4]);
 end
 endfunction
 
@@ -167,9 +170,9 @@ end
 endfunction
 
 
-function automatic [4:0] color_value(input arom_offset_t ofs);
+function automatic [4:0] color_value(input [7:0] sprite_index, input arom_offset_t ofs);
 begin
-    bit [63:0] color_source = ddr_cache_data[ddr_cache_slot(ofs)];
+    bit [63:0] color_source = ddr_cache_data[{sprite_index, ddr_cache_slot(ofs)}];
     color_value = 5'h1f;
     case({ofs.words[1:0], ofs.sub[1:0]})
         4'b0000: color_value = color_source[4:0];
@@ -232,28 +235,20 @@ always_ff @(posedge clk) begin
         case(queue_state)
             IDLE: begin
                 if (queue_valid & line_writable) begin
-                    if (ddr_cache_hit(wq_cur.arom_offset0) && ddr_cache_hit(wq_cur.arom_offset1)) begin
+                    if (ddr_cache_hit(wq_cur.sprite_index, wq_cur.arom_offset0) && ddr_cache_hit(wq_cur.sprite_index, wq_cur.arom_offset1)) begin
                         line_wr <= wq_cur.wr;
                         line_wr_entry <= wq_cur;
-                        line_wr_color0 <= color_value(wq_cur.arom_offset0);
-                        line_wr_color1 <= color_value(wq_cur.arom_offset1);
+                        line_wr_color0 <= color_value(wq_cur.sprite_index, wq_cur.arom_offset0);
+                        line_wr_color1 <= color_value(wq_cur.sprite_index, wq_cur.arom_offset1);
                         pop_entry = 1;
-                    end else begin
-                        // Cache miss: fetch the missing 64-bit word(s) over SDRAM.
-                        // Two pixels in different words -> two sequential requests.
-                        if (arom_word_addr(wq_cur.arom_offset0) == arom_word_addr(wq_cur.arom_offset1)) begin
-                            arom_address <= arom_word_addr(wq_cur.arom_offset0);
-                            arom_req <= ~arom_req;
-                            queue_state <= WAIT1;
-                        end else if (arom_word_addr(wq_cur.arom_offset0) < arom_word_addr(wq_cur.arom_offset1)) begin
-                            arom_address <= arom_word_addr(wq_cur.arom_offset0);
-                            arom_req <= ~arom_req;
-                            queue_state <= WAIT2;
-                        end else begin
-                            arom_address <= arom_word_addr(wq_cur.arom_offset1);
-                            arom_req <= ~arom_req;
-                            queue_state <= WAIT2;
-                        end
+                    end else if (!ddr_cache_hit(wq_cur.sprite_index, wq_cur.arom_offset0)) begin
+                        arom_address <= arom_word_addr(wq_cur.arom_offset0);
+                        arom_req <= ~arom_req;
+                        queue_state <= WAIT1;
+                    end else if (!ddr_cache_hit(wq_cur.sprite_index, wq_cur.arom_offset1)) begin
+                        arom_address <= arom_word_addr(wq_cur.arom_offset1);
+                        arom_req <= ~arom_req;
+                        queue_state <= WAIT1;                        
                     end
                 end
             end
@@ -262,15 +257,9 @@ always_ff @(posedge clk) begin
             WAIT1: begin
                 if (arom_req == arom_ack) begin
                     ddr_cache_valid <= 1;
-                    ddr_cache_addr[arom_address[4:3]] <= arom_address[24:5];
-                    ddr_cache_data[arom_address[4:3]] <= arom_data;
-                    if (queue_state == WAIT2) begin
-                        arom_address <= arom_address + 25'd8;
-                        arom_req <= ~arom_req;
-                        queue_state <= WAIT1;
-                    end else begin
-                        queue_state <= IDLE; // retry now that the cache is updated
-                    end
+                    ddr_cache_addr[{wq_cur.sprite_index, arom_address[4:3]}] <= arom_address[24:5];
+                    ddr_cache_data[{wq_cur.sprite_index, arom_address[4:3]}] <= arom_data;
+                    queue_state <= IDLE; // retry now that the cache is updated
                 end
             end
 
