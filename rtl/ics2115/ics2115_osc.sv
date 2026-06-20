@@ -499,7 +499,7 @@ module ics2115_osc
                         logic [28:0] next_osc;
                         logic signed [29:0] osc_left;
 
-                        if (v.osc_ctl[OSC_INVERT]) begin
+                        if (v.osc_conf[OSC_INVERT]) begin
                             next_osc = v.osc_acc - {14'd0, v.osc_fc[15:1]};
                             osc_left = $signed({1'b0, next_osc}) - $signed({1'b0, v.osc_start});
                         end else begin
