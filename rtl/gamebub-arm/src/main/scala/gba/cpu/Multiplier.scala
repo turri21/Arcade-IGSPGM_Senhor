@@ -37,15 +37,17 @@ class Multiplier extends Module {
   // is spread across the cycles the FSM already spends (ARM m-cycle early termination),
   // adding no instruction cycle:
   //   m == 1 (numCycles 0): small 32x9 multiply + accumulate, one cycle (no spare).
-  //   m == 2 (numCycles 1): sized 32x17 product this cycle, accumulate add deferred.
+  //   m == 2 (numCycles 1): latch operands, sized 32x17 multiply + accumulate from
+  //                          *registers* in the one spare cycle (no operand-read front).
   //   m >= 3 (numCycles 2..3): latch operands, multiply from *registers* next cycle
   //                            (DSP launches behind a reg, no operand-read in front),
   //                            accumulate add the cycle after.
-  // aReg/bReg/product/multPending/addPending are all dead at instruction boundaries
-  // (freeze only engages once `done`), so none needs a savestate word.
+  // aReg/bReg/product/mul2Pending/multPending/addPending are all dead at instruction
+  // boundaries (freeze only engages once `done`), so none needs a savestate word.
   val aReg = Reg(UInt(32.W))
   val bReg = Reg(UInt(32.W))
   val product = Reg(UInt(64.W))
+  val mul2Pending = RegInit(false.B)
   val multPending = RegInit(false.B)
   val addPending = RegInit(false.B)
 
@@ -73,17 +75,18 @@ class Multiplier extends Module {
   //   signed unless this is an unsigned *long* multiply.
   val smallSigned = io.signed || !io.long
   val b9  = io.b(8, 0)
-  val b17 = io.b(16, 0)
   val product9S  = Wire(SInt(64.W)); product9S  := io.a.asSInt * b9.asSInt
   val product9U  = Wire(UInt(64.W)); product9U  := io.a * b9
-  val product9   = Mux(smallSigned, product9S.asUInt, product9U)   // m == 1 (32x9)
-  val product17S = Wire(SInt(64.W)); product17S := io.a.asSInt * b17.asSInt
-  val product17U = Wire(UInt(64.W)); product17U := io.a * b17
-  val product17  = Mux(smallSigned, product17S.asUInt, product17U) // m == 2 (32x17)
+  val product9   = Mux(smallSigned, product9S.asUInt, product9U)   // m == 1 (32x9), live
 
-  // Full 32x32 product from the *latched* operands (m >= 3). Launching the DSP from
-  // registers keeps the ~8 ns operand-read out of this cycle's path.
+  // Products from the *latched* operands. Launching the DSP from registers keeps the
+  // ~8 ns operand-read out of this cycle's path. regProduct17 (m == 2) is small enough
+  // to also do the 64-bit accumulate add in the same (registered) cycle.
   val regProduct = Mux(io.signed, (aReg.asSInt * bReg.asSInt).asUInt, aReg * bReg)
+  val regB17 = bReg(16, 0)
+  val regProduct17S = Wire(SInt(64.W)); regProduct17S := aReg.asSInt * regB17.asSInt
+  val regProduct17U = Wire(UInt(64.W)); regProduct17U := aReg * regB17
+  val regProduct17  = Mux(smallSigned, regProduct17S.asUInt, regProduct17U)
 
   when (io.enable) {
     when (io.loadAccumulator) {
@@ -93,22 +96,31 @@ class Multiplier extends Module {
       when (numCycles === 0.U) {
         // m == 1: small 32x9 multiply + accumulate, all in this cycle (no spare cycle).
         output := product9 + augend
+        mul2Pending := false.B
         multPending := false.B
         addPending := false.B
-      } .elsewhen (numCycles === 1.U) {
-        // m == 2: capture the sized 32x17 product now; defer the add to the one
-        // countdown cycle the FSM already spends.
-        product := product17
-        multPending := false.B
-        addPending := true.B
       } .otherwise {
-        // m >= 3: latch the operands; the multiply runs next cycle from registers.
+        // m >= 2: latch the operands so the multiply launches behind a register next
+        // cycle (no operand-read in front).
         aReg := io.a
         bReg := io.b
-        multPending := true.B
-        addPending := false.B
+        when (numCycles === 1.U) {
+          // m == 2: one spare cycle — registered 32x17 multiply + accumulate together.
+          mul2Pending := true.B
+          multPending := false.B
+          addPending := false.B
+        } .otherwise {
+          // m >= 3: registered 32x32 multiply next cycle, accumulate add the cycle after.
+          mul2Pending := false.B
+          multPending := true.B
+          addPending := false.B
+        }
       }
       counter := numCycles
+    } .elsewhen (mul2Pending) {
+      // m == 2: registered 32x17 multiply + 64-bit accumulate, both this cycle.
+      output := regProduct17 + augend
+      mul2Pending := false.B
     } .elsewhen (multPending) {
       // Registered-operand multiply (m >= 3): the DSP launches behind a register.
       product := regProduct

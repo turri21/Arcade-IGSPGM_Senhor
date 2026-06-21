@@ -15,55 +15,100 @@ module Shifter(
   output [31:0] io_state_readData
 );
 
-  wire [31:0]  io_in_0 = io_in;
-  wire [2:0]   io_shiftKind_0 = io_shiftKind;
-  wire [5:0]   io_shiftAmount_0 = io_shiftAmount;
-  wire         io_carryIn_0 = io_carryIn;
-  wire         io_latchShift_0 = io_latchShift;
-  wire         io_useLatchedShift_0 = io_useLatchedShift;
-  wire [5:0]   io_state_address_0 = io_state_address;
-  wire [31:0]  io_state_writeData_0 = io_state_writeData;
-  wire         io_state_writeEnable_0 = io_state_writeEnable;
-  reg  [7:0]   latchedShift;
-  wire [31:0]  io_state_readData_0 = {24'h0, latchedShift};
-  wire [7:0]   shiftAmount = io_useLatchedShift_0 ? latchedShift : {2'h0, io_shiftAmount_0};
-  wire         _GEN = io_shiftKind_0 == 3'h0;
-  wire         _GEN_0 = shiftAmount == 8'h0;
-  wire         _GEN_1 = shiftAmount < 8'h20;
-  wire [286:0] _io_out_T = {255'h0, io_in_0} << shiftAmount;
-  wire [4:0]   amount = shiftAmount[4:0];
-  wire [31:0]  _io_carryOut_T_3 = io_in_0 >> 5'h0 - amount;
-  wire         _GEN_2 = shiftAmount == 8'h20;
-  wire         _GEN_3 = io_shiftKind_0 == 3'h1;
-  wire [31:0]  _GEN_4 = {24'h0, shiftAmount};
-  wire [31:0]  _io_carryOut_T_10 = io_in_0 >> amount - 5'h1;
-  wire         _GEN_5 = io_shiftKind_0 == 3'h2;
-  wire [31:0]  _io_carryOut_T_16 = io_in_0 >> amount - 5'h1;
-  wire         _GEN_6 = io_shiftKind_0 == 3'h3;
-  wire         _GEN_7 = amount == 5'h0;
-  wire [31:0]  _io_out_T_13 = amount[0] ? {io_in_0[0], io_in_0[31:1]} : io_in_0;
-  wire [31:0]  _io_out_T_17 = amount[1] ? {_io_out_T_13[1:0], _io_out_T_13[31:2]} : _io_out_T_13;
-  wire [31:0]  _io_out_T_21 = amount[2] ? {_io_out_T_17[3:0], _io_out_T_17[31:4]} : _io_out_T_17;
-  wire [31:0]  _io_out_T_25 = amount[3] ? {_io_out_T_21[7:0], _io_out_T_21[31:8]} : _io_out_T_21;
-  wire [31:0]  _io_carryOut_T_21 = io_in_0 >> amount - 5'h1;
-  wire [31:0]  io_out_0 =
-    _GEN
-      ? (_GEN_0 ? io_in_0 : _GEN_1 ? _io_out_T[31:0] : 32'h0)
-      : _GEN_3
-          ? (_GEN_2 ? 32'h0 : _GEN_0 ? io_in_0 : _GEN_1 ? io_in_0 >> _GEN_4 : 32'h0)
-          : _GEN_5
-              ? ((|(shiftAmount[7:5])) ? {32{io_in_0[31]}} : _GEN_0 ? io_in_0 : $signed($signed(io_in_0) >>> _GEN_4))
-              : _GEN_6
-                  ? (_GEN_0 | _GEN_7 ? io_in_0 : amount[4] ? {_io_out_T_25[15:0], _io_out_T_25[31:16]} : _io_out_T_25)
-                  : {io_carryIn_0, io_in_0[31:1]};
-  wire         io_carryOut_0 =
-    _GEN
-      ? (_GEN_0 ? io_carryIn_0 : _GEN_1 ? _io_carryOut_T_3[0] : _GEN_2 & io_in_0[0])
-      : _GEN_3
-          ? (_GEN_2 ? io_in_0[31] : _GEN_0 ? io_carryIn_0 : _GEN_1 & _io_carryOut_T_10[0])
-          : _GEN_5
-              ? ((|(shiftAmount[7:5])) ? io_in_0[31] : _GEN_0 ? io_carryIn_0 : _io_carryOut_T_16[0])
-              : _GEN_6 ? (_GEN_0 ? io_carryIn_0 : _GEN_7 ? io_in_0[31] : _io_carryOut_T_21[0]) : io_in_0[0];
+  wire [31:0] io_in_0 = io_in;
+  wire [2:0]  io_shiftKind_0 = io_shiftKind;
+  wire [5:0]  io_shiftAmount_0 = io_shiftAmount;
+  wire        io_carryIn_0 = io_carryIn;
+  wire        io_latchShift_0 = io_latchShift;
+  wire        io_useLatchedShift_0 = io_useLatchedShift;
+  wire [5:0]  io_state_address_0 = io_state_address;
+  wire [31:0] io_state_writeData_0 = io_state_writeData;
+  wire        io_state_writeEnable_0 = io_state_writeEnable;
+  reg  [7:0]  latchedShift;
+  wire [31:0] io_state_readData_0 = {24'h0, latchedShift};
+  wire [7:0]  amt = io_useLatchedShift_0 ? latchedShift : {2'h0, io_shiftAmount_0};
+  wire [4:0]  k = amt[4:0];
+  wire        lsl = io_shiftKind_0 == 3'h0;
+  wire        asr = io_shiftKind_0 == 3'h2;
+  wire        ror = io_shiftKind_0 == 3'h3;
+  wire        rrx = io_shiftKind_0 == 3'h4;
+  wire        big = |(amt[7:5]);
+  wire [7:0]  _GEN = {{io_in_0[11:8], io_in_0[15:14]} & 6'h33, 2'h0} | {io_in_0[15:12], io_in_0[19:16]} & 8'h33;
+  wire [18:0] _GEN_0 =
+    {io_in_0[5:4], io_in_0[7:6], io_in_0[9:8], _GEN, io_in_0[19:18], io_in_0[21:20], io_in_0[23]} & 19'h55555;
+  wire [31:0] src =
+    lsl
+      ? {io_in_0[0],
+         io_in_0[1],
+         io_in_0[2],
+         io_in_0[3],
+         io_in_0[4],
+         _GEN_0[18:15] | {io_in_0[7:6], io_in_0[9:8]} & 4'h5,
+         _GEN_0[14:7] | _GEN & 8'h55,
+         _GEN[1],
+         _GEN_0[5] | io_in_0[18],
+         io_in_0[19],
+         io_in_0[20],
+         {_GEN_0[2:0], 1'h0} | {io_in_0[23:22], io_in_0[25:24]} & 4'h5,
+         io_in_0[25],
+         io_in_0[26],
+         io_in_0[27],
+         io_in_0[28],
+         io_in_0[29],
+         io_in_0[30],
+         io_in_0[31]}
+      : io_in_0;
+  wire [31:0] hiFill = {32{asr & io_in_0[31]}};
+  wire [63:0] _funnel_T_1 = {hiFill, src} >> k;
+  wire [31:0] funnel = _funnel_T_1[31:0];
+  wire [7:0]  _GEN_1 = {{funnel[11:8], funnel[15:14]} & 6'h33, 2'h0} | {funnel[15:12], funnel[19:16]} & 8'h33;
+  wire [18:0] _GEN_2 =
+    {funnel[5:4], funnel[7:6], funnel[9:8], _GEN_1, funnel[19:18], funnel[21:20], funnel[23]} & 19'h55555;
+  wire [31:0] shifted =
+    lsl
+      ? {funnel[0],
+         funnel[1],
+         funnel[2],
+         funnel[3],
+         funnel[4],
+         _GEN_2[18:15] | {funnel[7:6], funnel[9:8]} & 4'h5,
+         _GEN_2[14:7] | _GEN_1 & 8'h55,
+         _GEN_1[1],
+         _GEN_2[5] | funnel[18],
+         funnel[19],
+         funnel[20],
+         {_GEN_2[2:0], 1'h0} | {funnel[23:22], funnel[25:24]} & 4'h5,
+         funnel[25],
+         funnel[26],
+         funnel[27],
+         funnel[28],
+         funnel[29],
+         funnel[30],
+         funnel[31]}
+      : funnel;
+  wire [31:0] _rored_T_8 = k[0] ? {io_in_0[0], io_in_0[31:1]} : io_in_0;
+  wire [31:0] _rored_T_12 = k[1] ? {_rored_T_8[1:0], _rored_T_8[31:2]} : _rored_T_8;
+  wire [31:0] _rored_T_16 = k[2] ? {_rored_T_12[3:0], _rored_T_12[31:4]} : _rored_T_12;
+  wire [31:0] _rored_T_20 = k[3] ? {_rored_T_16[7:0], _rored_T_16[31:8]} : _rored_T_16;
+  wire [31:0] rored = k[4] ? {_rored_T_20[15:0], _rored_T_20[31:16]} : _rored_T_20;
+  wire [31:0] rrxOut = {io_carryIn_0, io_in_0[31:1]};
+  wire [31:0] asrBig = {32{io_in_0[31]}};
+  wire [31:0] io_out_0 = rrx ? rrxOut : ror ? rored : big ? (asr ? asrBig : 32'h0) : shifted;
+  wire [31:0] _io_carryOut_T_6 = io_in_0 >> k - 5'h1;
+  wire        _io_carryOut_T_19 = amt < 8'h20;
+  wire [31:0] _io_carryOut_T_13 = io_in_0 >> 5'h0 - k;
+  wire        _io_carryOut_T_26 = amt == 8'h20;
+  wire [31:0] _io_carryOut_T_23 = io_in_0 >> k - 5'h1;
+  wire        io_carryOut_0 =
+    rrx
+      ? io_in_0[0]
+      : amt == 8'h0
+          ? io_carryIn_0
+          : ror
+              ? (k == 5'h0 ? io_in_0[31] : _io_carryOut_T_6[0])
+              : lsl
+                  ? (_io_carryOut_T_19 ? _io_carryOut_T_13[0] : _io_carryOut_T_26 & io_in_0[0])
+                  : _io_carryOut_T_19 ? _io_carryOut_T_23[0] : (asr | _io_carryOut_T_26) & io_in_0[31];
   always @(posedge clock) begin
     if (io_state_writeEnable_0 & io_state_address_0 == 6'h0)
       latchedShift <= io_state_writeData_0[7:0];

@@ -191,11 +191,22 @@ class ARM7TDMI extends Module {
       logger.debug(cf"  reg write [${control.regWriteIndex}] <- ${aluBus}%x")
       // Writes to PC are always aligned by 2, but there's no need to do that here,
       // because r15 writes via regWriteEnable are always followed by an incrementer write.
-      registers(
-        bankRegIndex(
-          control.regWriteIndex,
-          Mux(control.regUserWrite, CpuMode.User, control.regBankMode)
-        )) := aluBus
+      // Flattened bank write index: select the physical register from a mux of
+      // constants (early mode/index), not the bankRegIndex `index + offset` adder.
+      // Must stay bit-identical to bankRegIndex().
+      val wmode = Mux(control.regUserWrite, CpuMode.User, control.regBankMode)
+      val widx  = control.regWriteIndex
+      val whi   = widx === 14.U
+      val wfiq  = (wmode === CpuMode.Fiq) && (widx >= 8.U) && (widx <= 14.U)
+      val wshadow = MuxLookup(wmode, widx)(Seq(   // r13/r14 banked physical index
+        CpuMode.Supervisor -> Mux(whi, 17.U, 16.U),
+        CpuMode.Abort      -> Mux(whi, 19.U, 18.U),
+        CpuMode.Undefined  -> Mux(whi, 21.U, 20.U),
+        CpuMode.Irq        -> Mux(whi, 23.U, 22.U),
+      ))
+      val wphys = Mux(wfiq, Cat(1.U(1.W), widx(3, 0)),                  // r8..r14 fiq -> 24..30
+                  Mux((widx === 13.U) || (widx === 14.U), wshadow, widx))
+      registers(wphys) := aluBus
     }
     when (control.cpsrUpdateCond) {
       nextCpsr.cond := aluConditionOut

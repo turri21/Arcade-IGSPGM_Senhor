@@ -100,6 +100,7 @@ module ARM7TDMI(
   wire              io_saveReq_0 = io_saveReq;
   wire              io_mem_PROT_privileged_0 = 1'h0;
   wire              control_memProt_privileged = 1'h0;
+  wire [4:0]        offset = 5'h0;
   wire [4:0]        offset_1 = 5'h0;
   wire [4:0]        offset_2 = 5'h0;
   wire [4:0]        offset_3 = 5'h0;
@@ -107,8 +108,7 @@ module ARM7TDMI(
   wire [4:0]        offset_5 = 5'h0;
   wire [4:0]        offset_6 = 5'h0;
   wire [4:0]        offset_7 = 5'h0;
-  wire [4:0]        offset_8 = 5'h0;
-  wire [4:0]        offset_16 = 5'h0;
+  wire [4:0]        offset_15 = 5'h0;
   wire              control_memWrite;
   wire [1:0]        control_memWidth;
   wire              control_memProt_data;
@@ -481,18 +481,19 @@ module ARM7TDMI(
   wire              cBus_fiqHit = _cBus_shadow_T_4 == 5'h11 & control_regReadC[3] & control_regReadC != 4'hF;
   wire [31:0]       cBus = cBus_fiqHit ? cBus_fiqBank : cBus_is1314 ? cBus_shadow : _GEN_14;
   wire              control_regUserWrite;
-  wire [4:0]        _GEN_15 = control_regUserWrite ? 5'h10 : control_regBankMode;
+  wire [4:0]        wmode = control_regUserWrite ? 5'h10 : control_regBankMode;
   wire [3:0]        control_regWriteIndex;
+  wire              whi = control_regWriteIndex == 4'hE;
+  wire              wfiq = wmode == 5'h11 & control_regWriteIndex[3] & control_regWriteIndex != 4'hF;
+  wire [4:0]        _GEN_15 = {1'h0, control_regWriteIndex};
+  wire [4:0]        wshadow =
+    wmode == 5'h12
+      ? {4'hB, whi}
+      : wmode == 5'h1B ? {4'hA, whi} : wmode == 5'h17 ? {4'h9, whi} : wmode == 5'h13 ? {4'h8, whi} : _GEN_15;
+  wire [4:0]        wphys =
+    wfiq ? {1'h1, control_regWriteIndex} : control_regWriteIndex == 4'hD | whi ? wshadow : _GEN_15;
   wire              aluConditionOut_n;
   wire              control_cpsrUpdateCond;
-  wire [4:0]        offset =
-    _GEN_15 == 5'h11 & control_regWriteIndex[3] & control_regWriteIndex != 4'hF
-      ? 5'h10
-      : control_regWriteIndex == 4'hD | control_regWriteIndex == 4'hE
-          ? (_GEN_15 == 5'h13
-               ? 5'h3
-               : _GEN_15 == 5'h17 ? 5'h5 : _GEN_15 == 5'h1B ? 5'h7 : _GEN_15 == 5'h12 ? 5'h9 : 5'h0)
-          : 5'h0;
   wire              aluConditionOut_z;
   wire              aluConditionOut_c;
   wire              aluConditionOut_v;
@@ -649,6 +650,8 @@ module ARM7TDMI(
                                       ? _multiplier_io_state_readData
                                       : _shifter_io_state_readData;
   wire [4:0]        _GEN_26 = {_GEN_18, 4'h0};
+  wire [4:0]        offset_8;
+  assign offset_8 = _GEN_26;
   wire [4:0]        offset_9;
   assign offset_9 = _GEN_26;
   wire [4:0]        offset_10;
@@ -657,8 +660,8 @@ module ARM7TDMI(
   assign offset_11 = _GEN_26;
   wire [4:0]        offset_12;
   assign offset_12 = _GEN_26;
-  wire [4:0]        offset_13;
-  assign offset_13 = _GEN_26;
+  wire [4:0]        offset_16;
+  assign offset_16 = _GEN_26;
   wire [4:0]        offset_17;
   assign offset_17 = _GEN_26;
   wire [4:0]        offset_18;
@@ -667,8 +670,6 @@ module ARM7TDMI(
   assign offset_19 = _GEN_26;
   wire [4:0]        offset_20;
   assign offset_20 = _GEN_26;
-  wire [4:0]        offset_21;
-  assign offset_21 = _GEN_26;
   wire [4:0]        _GEN_27 =
     _GEN_18
       ? 5'h10
@@ -677,21 +678,21 @@ module ARM7TDMI(
           : control_regBankMode == 5'h17
               ? 5'h5
               : control_regBankMode == 5'h1B ? 5'h7 : control_regBankMode == 5'h12 ? 5'h9 : 5'h0;
+  wire [4:0]        offset_13;
+  assign offset_13 = _GEN_27;
   wire [4:0]        offset_14;
   assign offset_14 = _GEN_27;
-  wire [4:0]        offset_15;
-  assign offset_15 = _GEN_27;
+  wire [4:0]        offset_21;
+  assign offset_21 = _GEN_27;
   wire [4:0]        offset_22;
   assign offset_22 = _GEN_27;
-  wire [4:0]        offset_23;
-  assign offset_23 = _GEN_27;
-  wire [31:0]       io_debug_registers_8_0 = _GEN[offset_9 + 5'h8];
-  wire [31:0]       io_debug_registers_9_0 = _GEN[offset_10 + 5'h9];
-  wire [31:0]       io_debug_registers_10_0 = _GEN[offset_11 + 5'hA];
-  wire [31:0]       io_debug_registers_11_0 = _GEN[offset_12 + 5'hB];
-  wire [31:0]       io_debug_registers_12_0 = _GEN[offset_13 + 5'hC];
-  wire [31:0]       io_debug_registers_13_0 = _GEN[offset_14 + 5'hD];
-  wire [31:0]       io_debug_registers_14_0 = _GEN[offset_15 + 5'hE];
+  wire [31:0]       io_debug_registers_8_0 = _GEN[offset_8 + 5'h8];
+  wire [31:0]       io_debug_registers_9_0 = _GEN[offset_9 + 5'h9];
+  wire [31:0]       io_debug_registers_10_0 = _GEN[offset_10 + 5'hA];
+  wire [31:0]       io_debug_registers_11_0 = _GEN[offset_11 + 5'hB];
+  wire [31:0]       io_debug_registers_12_0 = _GEN[offset_12 + 5'hC];
+  wire [31:0]       io_debug_registers_13_0 = _GEN[offset_13 + 5'hD];
+  wire [31:0]       io_debug_registers_14_0 = _GEN[offset_14 + 5'hE];
   wire [6:0]        io_debug_cpsr_lo_1 = {io_debug_cpsr_lo_hi, cpsr_mode};
   wire [23:0]       io_debug_cpsr_hi_hi = {io_debug_cpsr_hi, io_debug_cpsr_lo, cpsr_padding};
   wire [24:0]       io_debug_cpsr_hi_1 = {io_debug_cpsr_hi_hi, cpsr_irqDisable};
@@ -1015,135 +1016,133 @@ module ARM7TDMI(
       halted <= 1'h0;
     end
     else begin
-      automatic logic [4:0] _GEN_42;
-      _GEN_42 = {1'h0, control_regWriteIndex} + offset;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h0)
         registers_0 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h0)
+      else if (enable & control_regWriteEnable & wphys == 5'h0)
         registers_0 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h1)
         registers_1 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h1)
+      else if (enable & control_regWriteEnable & wphys == 5'h1)
         registers_1 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h2)
         registers_2 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h2)
+      else if (enable & control_regWriteEnable & wphys == 5'h2)
         registers_2 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h3)
         registers_3 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h3)
+      else if (enable & control_regWriteEnable & wphys == 5'h3)
         registers_3 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h4)
         registers_4 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h4)
+      else if (enable & control_regWriteEnable & wphys == 5'h4)
         registers_4 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h5)
         registers_5 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h5)
+      else if (enable & control_regWriteEnable & wphys == 5'h5)
         registers_5 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h6)
         registers_6 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h6)
+      else if (enable & control_regWriteEnable & wphys == 5'h6)
         registers_6 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h7)
         registers_7 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h7)
+      else if (enable & control_regWriteEnable & wphys == 5'h7)
         registers_7 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h8)
         registers_8 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h8)
+      else if (enable & control_regWriteEnable & wphys == 5'h8)
         registers_8 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h9)
         registers_9 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h9)
+      else if (enable & control_regWriteEnable & wphys == 5'h9)
         registers_9 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'hA)
         registers_10 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'hA)
+      else if (enable & control_regWriteEnable & wphys == 5'hA)
         registers_10 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'hB)
         registers_11 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'hB)
+      else if (enable & control_regWriteEnable & wphys == 5'hB)
         registers_11 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'hC)
         registers_12 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'hC)
+      else if (enable & control_regWriteEnable & wphys == 5'hC)
         registers_12 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'hD)
         registers_13 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'hD)
+      else if (enable & control_regWriteEnable & wphys == 5'hD)
         registers_13 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'hE)
         registers_14 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'hE)
+      else if (enable & control_regWriteEnable & wphys == 5'hE)
         registers_14 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'hF)
         registers_15 <= io_state_writeData_0;
       else if (enable) begin
         if (control_pcNext)
           registers_15 <= incrementerBus & 32'hFFFFFFFE;
-        else if (control_regWriteEnable & _GEN_42 == 5'hF)
+        else if (control_regWriteEnable & wphys == 5'hF)
           registers_15 <= aluBus;
       end
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h10)
         registers_16 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h10)
+      else if (enable & control_regWriteEnable & wphys == 5'h10)
         registers_16 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h11)
         registers_17 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h11)
+      else if (enable & control_regWriteEnable & wphys == 5'h11)
         registers_17 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h12)
         registers_18 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h12)
+      else if (enable & control_regWriteEnable & wphys == 5'h12)
         registers_18 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h13)
         registers_19 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h13)
+      else if (enable & control_regWriteEnable & wphys == 5'h13)
         registers_19 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h14)
         registers_20 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h14)
+      else if (enable & control_regWriteEnable & wphys == 5'h14)
         registers_20 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h15)
         registers_21 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h15)
+      else if (enable & control_regWriteEnable & wphys == 5'h15)
         registers_21 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h16)
         registers_22 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h16)
+      else if (enable & control_regWriteEnable & wphys == 5'h16)
         registers_22 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h17)
         registers_23 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h17)
+      else if (enable & control_regWriteEnable & wphys == 5'h17)
         registers_23 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h18)
         registers_24 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h18)
+      else if (enable & control_regWriteEnable & wphys == 5'h18)
         registers_24 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h19)
         registers_25 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h19)
+      else if (enable & control_regWriteEnable & wphys == 5'h19)
         registers_25 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h1A)
         registers_26 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h1A)
+      else if (enable & control_regWriteEnable & wphys == 5'h1A)
         registers_26 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h1B)
         registers_27 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h1B)
+      else if (enable & control_regWriteEnable & wphys == 5'h1B)
         registers_27 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h1C)
         registers_28 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h1C)
+      else if (enable & control_regWriteEnable & wphys == 5'h1C)
         registers_28 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h1D)
         registers_29 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h1D)
+      else if (enable & control_regWriteEnable & wphys == 5'h1D)
         registers_29 <= aluBus;
       if (io_state_writeEnable_0 & _GEN_20 & io_state_address_0[4:0] == 5'h1E)
         registers_30 <= io_state_writeData_0;
-      else if (enable & control_regWriteEnable & _GEN_42 == 5'h1E)
+      else if (enable & control_regWriteEnable & wphys == 5'h1E)
         registers_30 <= aluBus;
       if (~io_state_writeEnable_0 | _GEN_20 | ~_GEN_21) begin
         if (enable) begin
