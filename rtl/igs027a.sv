@@ -87,7 +87,10 @@ module igs027a #(
     logic [31:0] arm_rdata;
     wire [31:0] dbg_regs [0:15];
 
-    wire        mem_ready;                 // assigned from the decode below
+    // Preserved as a single net (no duplication/fusion into per-register enable
+    // LUTs) so the SDC multicycle on the cache->mem_ready->arm_advance feedback can
+    // target it via get_nets. See Arcade-IGSPGM.sdc.
+    wire        mem_ready /* synthesis keep */; // assigned from the decode below
     logic [9:0] arm_steady_count;
     logic [9:0] arm_run_count;
 
@@ -103,7 +106,7 @@ module igs027a #(
     wire        arm_en_normal    = (arm_run_count != arm_steady_count);
     wire        arm_en_saveflush = save_window & ~arm_frozen;
     wire        arm_en      = save_window ? arm_en_saveflush : arm_en_normal;
-    wire        arm_advance = arm_en & mem_ready;
+    wire        arm_advance /* synthesis keep */ = arm_en & mem_ready;
 
     // ---- ssbus (core + wrapper) decode helpers ----
     wire        ss_sel = (ssbus.select == SS_IDX[7:0]) & ~ssbus.query;
