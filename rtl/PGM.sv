@@ -807,6 +807,8 @@ IGS023 #(.SS_IDX(SSIDX_IGS023)) igs023(
     .global_flip_x(global_flip_x),
     .global_flip_y(global_flip_y),
 
+    .sync_fix(sync_fix),
+
     .ssbus(ssb[SSIDX_IGS023])
 );
 
