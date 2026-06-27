@@ -307,7 +307,8 @@ module igs027a #(
 
     logic        wr_pend;
     logic [31:0] wr_addr;
-    logic [31:0] wr_data;
+    logic [31:0] wr_data /* verilator public_flat */;
+    logic        arm_advance_d;   // arm_advance delayed 1 cycle -> store data phase
     logic [3:0]  wr_be;
     wire  [31:0] wr_wmask = {{8{wr_be[3]}}, {8{wr_be[2]}}, {8{wr_be[1]}}, {8{wr_be[0]}}};
     wire wsel_iram   = (wr_addr[31:24] == 8'h10) || (wr_addr[31:24] == 8'h18);
@@ -557,18 +558,20 @@ module igs027a #(
             latch_68k_w <= 32'd0;
             counter     <= 32'd1;       // MAME inits counter to 1
             wr_pend     <= 1'b0;
+            arm_advance_d <= 1'b0;
             fiq_level   <= 1'b0;
             fiq_set_count <= 16'd0;
             fiq_clr_count <= 16'd0;
             ram_sel     <= 1'b1;        // type3 dmnfrnt boots with bank 1 selected
         end else begin
-            // ---- ARM write request capture (address phase) ----
+
+            arm_advance_d <= arm_advance;
             if (arm_advance) begin
                 wr_pend <= arm_mreq & arm_write;
                 wr_addr <= arm_addr;
-                wr_data <= arm_wdata;
                 wr_be   <= arm_byte_we;
             end
+            if (arm_advance_d) wr_data <= arm_wdata;  // data phase
 
             // type3 share-RAM bank select (ARM write to 0x40000018)
             if (arm_advance && wr_pend && wsel_bsel)
