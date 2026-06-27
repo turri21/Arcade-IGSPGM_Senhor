@@ -134,19 +134,6 @@ reg [31:0] spr_y_scale_bits;
 reg [22:0] spr_brom_addr;
 
 
-wire [8:0] spr_y_end = spr_height - 9'd1;
-logic [4:0] spr_y_scale_idx;
-
-always_comb begin
-    bit [8:0] y;
-    if (spr_y_flip) begin
-        y = spr_y_end - spr.source_line;
-    end else begin
-        y = spr.source_line;
-    end
-    spr_y_scale_idx = y[4:0];       
-end
-
 typedef struct
 {
     bit [63:0]    brom_cache;
@@ -160,6 +147,19 @@ typedef struct
 
 volatile_sprite_state_t sprite_state[256];
 volatile_sprite_state_t spr, spr_saved;
+
+wire [8:0] spr_y_end = spr_height - 9'd1;
+logic [4:0] spr_y_scale_idx;
+
+always_comb begin
+    bit [8:0] y;
+    if (spr_y_flip) begin
+        y = spr_y_end - spr.source_line;
+    end else begin
+        y = spr.source_line;
+    end
+    spr_y_scale_idx = y[4:0];       
+end
 
 function automatic [22:0] brom_address_for_offset(input [15:0] offset);
 begin
