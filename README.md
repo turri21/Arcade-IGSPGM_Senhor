@@ -1,3 +1,8 @@
+-=(IGSPGM_Senhor notes)=-
+
+Tested: Working Video 720p, 1080p & Sound.
+
+___
 # IGS PolyGame Master MiSTer FPGA core
 
 The PolyGame Master (PGM) is an arcade system board released in 1997 by IGS. It has a lot of similarities to SNK's Neo Geo - cartridge based with multiple buses, heavily sprite focused graphics hardware, 68000 main CPU, Z80 for audio.
